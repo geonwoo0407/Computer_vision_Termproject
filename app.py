@@ -6,7 +6,7 @@ from datetime import timedelta
 from flask import Flask, g, render_template, request, jsonify, session, Response, send_from_directory
 from werkzeug.security import check_password_hash, generate_password_hash
 
-SEAT_COUNT = 287
+SEAT_COUNT = 288
 
 def create_app(database=None):
     app = Flask(__name__)

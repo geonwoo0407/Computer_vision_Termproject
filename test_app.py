@@ -41,7 +41,7 @@ class SeatTests(unittest.TestCase):
     def test_conflict_and_validation(self):
         self.action('reserve');self.assertEqual(409,self.action('reserve').status_code)
         self.assertEqual(400,self.action('detect',source='demo',occupied='false',belongings=True).status_code)
-        self.assertEqual(404,self.c.post('/api/action',json={'action':'reserve','seat_id':288}).status_code)
+        self.assertEqual(404,self.c.post('/api/action',json={'action':'reserve','seat_id':289}).status_code)
     def test_modes(self):
         self.action('mode',mode='camera');self.assertEqual(409,self.detect(True,True).status_code)
         self.assertEqual(200,self.action('detect',source='camera',occupied=True,belongings=False).status_code)
@@ -55,12 +55,12 @@ class SeatTests(unittest.TestCase):
         for path in ('/', '/admin', '/demo'):
             page = self.c.get(path).get_data(as_text=True)
             ids = [int(value) for value in re.findall(r'data-seat-id="(\d+)"', page)]
-            self.assertEqual(sorted(ids), list(range(1, 288)))
+            self.assertEqual(sorted(ids), list(range(1, 289)))
             self.assertEqual(ids[:14], [12, 13, 11, 14, 10, 15, 9, 16, 8, 17, 7, 18, 6, 19])
             self.assertEqual(ids[22:26], [1, 24, 36, 37])
             self.assertEqual(ids[142:146], [121, 144, 156, 157])
-            self.assertEqual(ids[-5:], [267, 286, 266, 287, 265])
-        self.assertEqual(self.c.post('/api/action', json={'action':'reserve','seat_id':287}).status_code,200)
+            self.assertEqual(ids[-6:], [267, 286, 266, 287, 265, 288])
+        self.assertEqual(self.c.post('/api/action', json={'action':'reserve','seat_id':288}).status_code,200)
         seats = self.c.get('/api/seats').json['seats']
         self.assertTrue(seats[-1]['mine'])
 
