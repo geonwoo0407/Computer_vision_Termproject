@@ -45,6 +45,15 @@ class SeatTests(unittest.TestCase):
         self.assertTrue(c2.get('/api/seats').json['seats'][0]['reserved'])
         for path in ('/','/admin','/demo','/static/app.js','/static/style.css'):
             with self.c.get(path) as response: self.assertEqual(200,response.status_code)
+    def test_seat_map_has_two_facing_rows(self):
+        with self.c.get('/') as response:
+            page = response.get_data(as_text=True)
+        with self.c.get('/static/app.js') as response:
+            script = response.get_data(as_text=True)
+        self.assertIn('id="north" class="bank bank-north"', page)
+        self.assertIn('id="south" class="bank bank-south"', page)
+        self.assertNotIn('class="aisle"', page)
+        self.assertIn("s.id <= 6 ? 'north' : 'south'", script)
     def test_health_does_not_create_a_session(self):
         client = self.app.test_client()
         response = client.get('/health')

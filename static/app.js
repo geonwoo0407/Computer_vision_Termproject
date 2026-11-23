@@ -34,7 +34,7 @@ function drawMap() {
         draw();
         $('detail').scrollIntoView({behavior:'smooth',block:'nearest'});
       };
-      $(s.id <= 6 ? 'west' : 'east').append(desk);
+      $(s.id <= 6 ? 'north' : 'south').append(desk);
       desks.set(s.id, desk);
     }
     desk.className = 'desk ' + s.color;
