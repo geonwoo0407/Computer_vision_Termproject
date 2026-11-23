@@ -6,9 +6,11 @@ from datetime import timedelta
 from flask import Flask, g, render_template, request, jsonify, session, Response, send_from_directory
 from werkzeug.security import check_password_hash, generate_password_hash
 
+SEAT_COUNT = 287
 
 def create_app(database=None):
     app = Flask(__name__)
+    app.jinja_env.globals['seat_count'] = SEAT_COUNT
     app.config['DATABASE'] = (database or os.environ.get('SEAT_DATABASE')
                               or os.path.join(app.instance_path, 'seats.db'))
     os.makedirs(os.path.dirname(os.path.abspath(app.config['DATABASE'])), exist_ok=True)
@@ -30,7 +32,7 @@ def create_app(database=None):
         return c
     with closing(connect()) as c, c:
         c.execute('CREATE TABLE IF NOT EXISTS seats (id INTEGER PRIMARY KEY, reserved INTEGER DEFAULT 0, occupied INTEGER DEFAULT 0, belongings INTEGER DEFAULT 0, used INTEGER DEFAULT 0, away_since REAL, updated REAL)')
-        c.executemany('INSERT OR IGNORE INTO seats(id) VALUES (?)', [(i,) for i in range(1,13)])
+        c.executemany('INSERT OR IGNORE INTO seats(id) VALUES (?)', ((i,) for i in range(1, SEAT_COUNT + 1)))
         c.execute('CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY, mode TEXT)')
         c.execute("INSERT OR IGNORE INTO settings VALUES (1,'demo')")
         # Additive migration: preserve every existing row, reservation and timestamp.

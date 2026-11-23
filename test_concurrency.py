@@ -23,7 +23,7 @@ class SharedRoom(TestCase):
         self.a, self.b = app.test_client(), app.test_client()
         for index, client in enumerate((self.a, self.b)):
             register(client, 'student' + str(index))
-            self.assertEqual(len(client.get('/api/seats').json['seats']), 12)
+            self.assertEqual(len(client.get('/api/seats').json['seats']), 287)
 
     def simultaneous(self, first, second):
         gate = threading.Barrier(2)

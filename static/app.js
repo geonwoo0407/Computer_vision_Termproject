@@ -1,7 +1,94 @@
 const $ = id => document.getElementById(id);
 const role = document.body.dataset.role;
 let state, selected = 1, moving = null, pending = false, offset = 0, live;
-const desks = new Map();
+const floor = $('seats');
+const desks = new Map(Array.from(floor.querySelectorAll('[data-seat-id]'),
+  button => [Number(button.dataset.seatId), button]));
+// Touch and trackpad scrolling are native. Add grab-to-scroll for a mouse.
+let mouseDrag = null;
+floor.addEventListener('pointerdown', event => {
+  if (event.pointerType === 'mouse' && event.button === 0 && event.target.closest('.seat-banks')) {
+    mouseDrag = {startX: event.clientX, startY: event.clientY, scrollLeft: floor.scrollLeft, scrollTop: floor.scrollTop};
+  }
+});
+floor.addEventListener('pointermove', event => {
+  if (!mouseDrag || event.pointerType !== 'mouse') return;
+  const dx = event.clientX - mouseDrag.startX;
+  const dy = event.clientY - mouseDrag.startY;
+  if (!floor.hasPointerCapture(event.pointerId)) {
+    if (Math.hypot(dx, dy) < 6) return;
+    floor.setPointerCapture(event.pointerId);
+    floor.classList.add('dragging');
+  }
+  floor.scrollLeft = mouseDrag.scrollLeft - dx;
+  floor.scrollTop = mouseDrag.scrollTop - dy;
+});
+function endMouseDrag() {
+  mouseDrag = null;
+  floor.classList.remove('dragging');
+}
+window.addEventListener('pointerup', endMouseDrag);
+floor.addEventListener('pointercancel', endMouseDrag);
+window.addEventListener('blur', endMouseDrag);
+floor.addEventListener('click', event => {
+  const desk = event.target.closest('[data-seat-id]');
+  if (!desk || desk.disabled) return;
+  selected = Number(desk.dataset.seatId);
+  draw();
+  $('detail').scrollIntoView({behavior:'smooth',block:'nearest'});
+});
+
+let mapScale = 1;
+const minScale = 0.5, maxScale = 2;
+function pointOnMap(x, y) {
+  return {x: (floor.scrollLeft + x) / mapScale, y: (floor.scrollTop + y) / mapScale};
+}
+function zoomMap(scale, x = floor.clientWidth / 2, y = floor.clientHeight / 2, anchor = pointOnMap(x, y)) {
+  mapScale = Math.max(minScale, Math.min(maxScale, scale));
+  floor.style.setProperty('--map-scale', mapScale);
+  floor.scrollLeft = anchor.x * mapScale - x;
+  floor.scrollTop = anchor.y * mapScale - y;
+  $('zoom-reset').textContent = Math.round(mapScale * 100) + '%';
+  $('zoom-out').disabled = mapScale <= minScale;
+  $('zoom-in').disabled = mapScale >= maxScale;
+}
+$('zoom-out').onclick = () => zoomMap(mapScale - 0.25);
+$('zoom-in').onclick = () => zoomMap(mapScale + 0.25);
+$('zoom-reset').onclick = () => zoomMap(1);
+floor.addEventListener('wheel', event => {
+  if (!event.deltaY || Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
+  event.preventDefault();
+  const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? floor.clientHeight : 1;
+  const factor = Math.exp(-event.deltaY * unit * 0.002);
+  const rect = floor.getBoundingClientRect();
+  zoomMap(mapScale * factor, event.clientX - rect.left - floor.clientLeft,
+          event.clientY - rect.top - floor.clientTop);
+}, {passive:false});
+
+let pinch = null;
+function touchGeometry(touches) {
+  const [a, b] = touches;
+  const rect = floor.getBoundingClientRect();
+  return {x: (a.clientX + b.clientX) / 2 - rect.left - floor.clientLeft,
+          y: (a.clientY + b.clientY) / 2 - rect.top - floor.clientTop,
+          distance: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY)};
+}
+floor.addEventListener('touchstart', event => {
+  if (event.touches.length !== 2) { pinch = null; return; }
+  const {x, y, distance} = touchGeometry(event.touches);
+  if (distance > 0) {
+    event.preventDefault();
+    pinch = {distance, scale: mapScale, anchor: pointOnMap(x, y)};
+  }
+}, {passive:false});
+floor.addEventListener('touchmove', event => {
+  if (!pinch || event.touches.length !== 2) return;
+  event.preventDefault();
+  const {x, y, distance} = touchGeometry(event.touches);
+  zoomMap(pinch.scale * distance / pinch.distance, x, y, pinch.anchor);
+}, {passive:false});
+floor.addEventListener('touchend', () => {pinch = null;});
+floor.addEventListener('touchcancel', () => {pinch = null;});
 function element(tag, text, cls) {
   const el = document.createElement(tag);
   el.textContent = text;
@@ -30,17 +117,9 @@ function seatLabel(seat) {
 }
 function drawMap() {
   for (const s of state.seats) {
-    let desk = desks.get(s.id);
-    if (!desk) {
-      desk = element('button', '');
-      desk.onclick = () => {
-        selected = s.id;
-        draw();
-        $('detail').scrollIntoView({behavior:'smooth',block:'nearest'});
-      };
-      $(s.id <= 6 ? 'north' : 'south').append(desk);
-      desks.set(s.id, desk);
-    }
+    const desk = desks.get(s.id);
+    if (!desk) continue;
+    desk.disabled = false;
     desk.className = 'desk ' + (role === 'student' && s.color !== 'empty' ? 'reserved' : s.color);
     desk.setAttribute('aria-pressed', String(selected === s.id));
     desk.replaceChildren(element('strong', String(s.id).padStart(2,'0')),
@@ -237,7 +316,7 @@ if (role === 'student') $('logout').onclick = async () => {
   } catch { $('message').textContent = '로그아웃하지 못했습니다. 연결을 확인하세요.'; }
 };
 window.addEventListener('offline',()=>restart());
-window.addEventListener('pageshow',()=>restart());
+window.addEventListener('pageshow',()=>{floor.scrollTo(0,0);restart();});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)restart();});
 setInterval(tick,1000);
 restart();

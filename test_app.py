@@ -1,4 +1,5 @@
 from contextlib import closing
+import re
 import tempfile, unittest, os
 from app import create_app
 
@@ -40,7 +41,7 @@ class SeatTests(unittest.TestCase):
     def test_conflict_and_validation(self):
         self.action('reserve');self.assertEqual(409,self.action('reserve').status_code)
         self.assertEqual(400,self.action('detect',source='demo',occupied='false',belongings=True).status_code)
-        self.assertEqual(404,self.c.post('/api/action',json={'action':'reserve','seat_id':99}).status_code)
+        self.assertEqual(404,self.c.post('/api/action',json={'action':'reserve','seat_id':288}).status_code)
     def test_modes(self):
         self.action('mode',mode='camera');self.assertEqual(409,self.detect(True,True).status_code)
         self.assertEqual(200,self.action('detect',source='camera',occupied=True,belongings=False).status_code)
@@ -50,15 +51,19 @@ class SeatTests(unittest.TestCase):
         self.assertTrue(c2.get('/api/seats').json['seats'][0]['reserved'])
         for path in ('/','/admin','/demo','/static/app.js','/static/style.css'):
             with self.c.get(path) as response: self.assertEqual(200,response.status_code)
-    def test_seat_map_has_two_facing_rows(self):
-        with self.c.get('/') as response:
-            page = response.get_data(as_text=True)
-        with self.c.get('/static/app.js') as response:
-            script = response.get_data(as_text=True)
-        self.assertIn('id="north" class="bank bank-north"', page)
-        self.assertIn('id="south" class="bank bank-south"', page)
-        self.assertNotIn('class="aisle"', page)
-        self.assertIn("s.id <= 6 ? 'north' : 'south'", script)
+    def test_floor_plan_numbers_match_the_reading_room(self):
+        for path in ('/', '/admin', '/demo'):
+            page = self.c.get(path).get_data(as_text=True)
+            ids = [int(value) for value in re.findall(r'data-seat-id="(\d+)"', page)]
+            self.assertEqual(sorted(ids), list(range(1, 288)))
+            self.assertEqual(ids[:14], [12, 13, 11, 14, 10, 15, 9, 16, 8, 17, 7, 18, 6, 19])
+            self.assertEqual(ids[22:26], [1, 24, 36, 37])
+            self.assertEqual(ids[142:146], [121, 144, 156, 157])
+            self.assertEqual(ids[-5:], [267, 286, 266, 287, 265])
+        self.assertEqual(self.c.post('/api/action', json={'action':'reserve','seat_id':287}).status_code,200)
+        seats = self.c.get('/api/seats').json['seats']
+        self.assertTrue(seats[-1]['mine'])
+
     def test_health_does_not_create_a_session(self):
         client = self.app.test_client()
         response = client.get('/health')
