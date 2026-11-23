@@ -16,3 +16,13 @@
 #detail p{color:#4c657b;font-size:14px}#detail small{display:block;margin-top:10px}.actions button:first-child{background:#203f56;color:white}
 #message:not(:empty){padding:10px 0;font-weight:600}#message:empty{min-height:0}
 @media(max-width:480px){.summary{grid-template-columns:repeat(4,minmax(0,1fr));gap:4px}.summary>div{padding:12px 5px;text-align:center}.summary span{font-size:10px}.summary strong{font-size:20px}.legend{gap:8px}.floor{padding:26px 3px}.bank{column-gap:2px}.desk{min-height:66px;padding:4px 0}.desk strong{font-size:18px}.desk span,.desk small{font-size:8px}}
+
+.account-bar {display:flex; align-items:center; gap:14px; flex-wrap:wrap; color:#435c73}
+.account-bar a, .account-form a, .actions a {color:#235887}
+.account-form {display:grid; gap:18px; max-width:400px; margin-top:24px}
+.account-form label {display:grid; gap:6px; font-weight:600}
+.account-form input {box-sizing:border-box; width:100%; font:inherit; padding:10px; border:1px solid #bccbd9; border-radius:7px}
+.account-form button {background:#203f56; color:white}
+.account-form p {margin:0; color:#913644}
+.desk .owner-name {max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+body[data-role=student] .summary {grid-template-columns:repeat(3,minmax(0,1fr))}

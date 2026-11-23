@@ -2,6 +2,10 @@ from contextlib import closing
 import tempfile, unittest, os
 from app import create_app
 
+def register(client, login_id, name='테스트 학생'):
+    response = client.post('/api/student/register', json=dict(login_id=login_id, name=name, password='seat-test123'))
+    assert response.status_code == 200, response.json
+
 def authenticate(app, client):
     app.config['STAFF_PASSWORD'] = 'test-only'
     with client.get('/admin', auth=('admin','test-only')) as response:
@@ -10,10 +14,11 @@ def authenticate(app, client):
 class SeatTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory(); self.app=create_app(os.path.join(self.tmp.name,'test.db')); self.c=self.app.test_client()
+        register(self.c, 'student1', '김하늘')
         authenticate(self.app,self.c)
     def tearDown(self): self.tmp.cleanup()
     def action(self,action,**kw): return self.c.post('/api/action',json=dict(action=action,seat_id=1,**kw))
-    def seat(self): return self.c.get('/api/seats').json['seats'][0]
+    def seat(self): return self.c.get('/api/seats?view=admin').json['seats'][0]
     def detect(self,p,b): return self.action('detect',source='demo',occupied=p,belongings=b)
     def test_unreserved_lifecycle(self):
         self.detect(True,True);self.assertTrue(self.seat()['warning'])
@@ -62,6 +67,7 @@ class SeatTests(unittest.TestCase):
     def test_return_owner_only_and_repeat(self):
         self.action('reserve')
         other=self.app.test_client()
+        register(other, 'other')
         self.assertFalse(other.get('/api/seats').json['seats'][0]['mine'])
         for act in ('return','cancel'):
             self.assertEqual(403,other.post('/api/action',json={'action':act,'seat_id':1}).status_code)
@@ -92,8 +98,9 @@ class SeatTests(unittest.TestCase):
             acts=[r[0] for r in c.execute('SELECT action FROM reservation_events ORDER BY id')]
         self.assertEqual(['reserve','cancel','reserve','return'],acts)
     def test_admin_assignment(self):
-        other=self.app.test_client();other_id=other.get('/api/seats').json['viewer_id']
-        self.action('grant',owner_id=other_id)
+        other=self.app.test_client();register(other,'other','이민서')
+        self.action('grant',login_id='other')
+        self.assertEqual(self.seat()['owner_name'], '이민서')
         self.assertFalse(self.seat()['mine']);self.assertTrue(other.get('/api/seats').json['seats'][0]['mine'])
         self.assertEqual(200,other.post('/api/action',json={'action':'return','seat_id':1}).status_code)
     def test_migration_preserves_legacy(self):
@@ -102,7 +109,7 @@ class SeatTests(unittest.TestCase):
         with closing(sqlite3.connect(path)) as c, c:
             c.execute('CREATE TABLE seats (id INTEGER PRIMARY KEY,reserved INTEGER,occupied INTEGER,belongings INTEGER,used INTEGER,away_since REAL,updated REAL)')
             c.execute('INSERT INTO seats VALUES (1,1,0,1,1,1234.5,1235.5)')
-        legacy=create_app(path);client=legacy.test_client();authenticate(legacy,client);s=client.get('/api/seats').json['seats'][0]
+        legacy=create_app(path);client=legacy.test_client();register(client,'legacy');authenticate(legacy,client);s=client.get('/api/seats?view=admin').json['seats'][0]
         self.assertTrue(s['reserved']);self.assertEqual(1234.5,s['away_since']);self.assertIsNone(s['owner_id'])
         self.assertEqual(403,client.post('/api/action',json={'action':'return','seat_id':1}).status_code)
         viewer=client.get('/api/seats').json['viewer_id']
@@ -113,4 +120,48 @@ class SeatTests(unittest.TestCase):
         self.action('reserve');cookie=self.c.get_cookie('session')
         client=create_app(self.app.config['DATABASE']).test_client();client.set_cookie('session',cookie.value)
         self.assertTrue(client.get('/api/seats').json['seats'][0]['mine'])
+
+    def test_account_owns_reservation_across_devices_and_logout(self):
+        guest = self.app.test_client()
+        with guest.session_transaction() as sess:
+            sess['viewer_id'] = 'stale-browser-id'
+        reserve = {'action':'reserve','seat_id':1,'owner_id':'untrusted'}
+        self.assertEqual(guest.post('/api/action',json=reserve).status_code,401)
+        self.assertEqual(self.c.post('/api/action',json=reserve).status_code,200)
+        login = {'login_id':'student1','password':'seat-test123'}
+        self.assertEqual(guest.post('/api/student/login',json={**login,'password':'wrong'}).status_code,401)
+        self.assertEqual(guest.post('/api/student/register',json={**login,'name':'다른 이름'}).status_code,409)
+        self.assertEqual(guest.post('/api/student/login',json=login).status_code,200)
+        self.assertEqual(guest.get('/api/seats').json['viewer_name'],'김하늘')
+        self.assertTrue(guest.get('/api/seats').json['seats'][0]['mine'])
+        self.assertEqual(guest.post('/api/action',json={**reserve,'seat_id':2}).status_code,409)
+        self.assertEqual(guest.post('/api/student/logout',json={}).status_code,200)
+        self.assertIsNone(guest.get('/api/seats').json['viewer_name'])
+        self.assertEqual(guest.post('/api/action',json={'action':'return','seat_id':1}).status_code,401)
+        self.assertTrue(self.seat()['reserved'])
+
+    def test_names_only_on_authenticated_admin_responses(self):
+        self.action('reserve')
+        self.detect(True,False)
+        self.assertEqual(self.seat()['owner_name'],'김하늘')
+        other = self.app.test_client()
+        register(other,'other','이민서')
+        for client, query in [(self.c,''), (other,''), (other,'?view=admin')]:
+            def redacted(seat):
+                self.assertNotIn('owner_name',seat)
+                self.assertNotIn('owner_id',seat)
+            redacted(client.get('/api/seats'+query).json['seats'][0])
+            with client.get('/api/live'+query,buffered=False) as stream:
+                import json
+                packet = json.loads(next(iter(stream.response)).decode().removeprefix('data: '))
+                redacted(packet['seats'][0])
+            redacted(client.post('/api/result'+query,json={'request_id':'missing'}).json['state']['seats'][0])
+        self.assertEqual(other.post('/api/action',json={'action':'cancel','seat_id':1}).status_code,403)
+
+    def test_account_changes_reject_stale_tab_action(self):
+        before = self.c.get('/api/seats').json['viewer_id']
+        register(self.c,'other')
+        response = self.c.post('/api/action',json={'action':'reserve','seat_id':1},headers={'X-Seat-Viewer':before})
+        self.assertTrue(response.json['identity_changed'])
+        self.assertFalse(self.seat()['reserved'])
 if __name__=='__main__': unittest.main(verbosity=2)

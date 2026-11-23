@@ -24,6 +24,10 @@ function tick() {
   for (const node of document.querySelectorAll('[data-since]'))
     node.textContent = elapsed(Number(node.dataset.since));
 }
+function seatLabel(seat) {
+  if (role === 'student') return seat.color === 'empty' ? '예약 가능' : '이용 중';
+  return seat.status;
+}
 function drawMap() {
   for (const s of state.seats) {
     let desk = desks.get(s.id);
@@ -37,11 +41,14 @@ function drawMap() {
       $(s.id <= 6 ? 'north' : 'south').append(desk);
       desks.set(s.id, desk);
     }
-    desk.className = 'desk ' + s.color;
+    desk.className = 'desk ' + (role === 'student' && s.color !== 'empty' ? 'reserved' : s.color);
     desk.setAttribute('aria-pressed', String(selected === s.id));
     desk.replaceChildren(element('strong', String(s.id).padStart(2,'0')),
-      element('span', (s.mine ? '내 자리 · ' : '') + s.status));
-    if (s.away) {
+      element('span', seatLabel(s)));
+    if (role === 'admin' && (s.reserved || s.occupied)) {
+      desk.append(element('small', s.owner_name || '예약자 미확인', 'owner-name'));
+    }
+    if (role !== 'student' && s.away) {
       const clock = element('small', '');
       clock.dataset.since = s.away_since;
       desk.append(clock);
@@ -51,13 +58,19 @@ function drawMap() {
 function drawDetail() {
   const s = state.seats.find(seat => seat.id === selected);
   const panel = $('detail');
-  panel.replaceChildren(element('h2', selected + '번 좌석 · ' + s.status),
-    element('p', '사람 ' + (s.occupied?'감지':'없음') + ' · 소지품 ' + (s.belongings?'있음':'없음')));
+  panel.replaceChildren(element('h2', selected + '번 좌석 · ' + seatLabel(s)));
+  if (role !== 'student') panel.append(element('p', '사람 ' + (s.occupied?'감지':'없음') + ' · 소지품 ' + (s.belongings?'있음':'없음')));
   const actions = element('div','','actions');
   panel.append(actions);
   const action = (name, extra={}) => send({action:name, seat_id:s.id, ...extra});
   if (role === 'student') {
-    if (moving !== null) {
+    if (!state.viewer_name) {
+      if (s.color === 'empty') {
+        const link = element('a', '로그인하고 예약하기');
+        link.href = '/login';
+        actions.append(link);
+      }
+    } else if (moving !== null) {
       panel.prepend(element('p', moving + '번에서 이동할 빈 좌석을 배치도에서 선택하세요.'));
       if (s.color === 'empty')
         control(actions, selected+'번으로 이동', () => action('move',{seat_id:moving,target_id:s.id}));
@@ -73,12 +86,12 @@ function drawDetail() {
     }
   }
   function owner(name) {
-    const id=prompt('학생 화면에 표시된 이용자 ID를 입력하세요.',state.viewer_id);
-    if(id?.trim()) action(name,{owner_id:id.trim()});
+    const id=prompt('예약할 학생의 로그인 아이디를 입력하세요.');
+    if(id?.trim()) action(name,{login_id:id.trim()});
   }
   if(role==='admin') {
     if(s.reserved) {
-      panel.append(element('small','예약자 · '+(s.owner_id || '미지정')));
+      panel.append(element('small','예약자 · '+(s.owner_name || '미확인')));
       control(actions,'예약자 지정',()=>owner('assign_owner'));
       control(actions,'예약 권한 해제',()=>action('revoke'));
     } else control(actions,'예약 권한 부여',()=>owner('grant'));
@@ -91,14 +104,20 @@ function drawDetail() {
     control(actions,s.reserved?'예약 해제':'예약 부여',()=>action(s.reserved?'revoke':'grant'));
   }
   if(role!=='student' && s.updated) panel.append(element('p','마지막 감지 · '+new Date(s.updated*1000).toLocaleTimeString()));
-  if(s.warning) panel.append(element('p','미예약 이용 또는 소지품 확인 필요','warning'));
+  if(role!=='student' && s.warning) panel.append(element('p','미예약 이용 또는 소지품 확인 필요','warning'));
 }
 function draw() {
   if(moving!==null && !state.seats.some(s=>s.id===moving && s.mine)) moving=null;
-  $('identity').textContent = '내 이용자 ID · '+state.viewer_id;
+  if (role === 'student') {
+    $('identity').textContent = state.viewer_name ? '내 이용자 ID · ' + state.viewer_name : '학생 계정';
+    $('guest-links').hidden = Boolean(state.viewer_name);
+    $('logout').hidden = !state.viewer_name;
+  }
   $('mode').textContent = state.mode==='demo'?'시연 모드':'카메라 API 모드';
-  const counts = [['전체 좌석',state.seats.length],['예약 가능',state.seats.filter(s=>s.color==='empty').length],
-    ['자리 비움',state.seats.filter(s=>s.away).length],['미예약 경고',state.seats.filter(s=>s.warning).length]];
+  const available = state.seats.filter(s=>s.color==='empty').length;
+  const counts = [['전체 좌석',state.seats.length],['예약 가능',available]];
+  if (role === 'student') counts.push(['이용 중',state.seats.length - available]);
+  else counts.push(['자리 비움',state.seats.filter(s=>s.away).length],['미예약 경고',state.seats.filter(s=>s.warning).length]);
   $('summary').replaceChildren(...counts.map(([label,n])=>{
     const box=element('div',''); box.append(element('span',label),element('strong',n+'석')); return box;
   }));
@@ -125,10 +144,11 @@ async function api(path, body) {
   const controller = new AbortController();
   const timeout = setTimeout(()=>controller.abort(), 8000);
   try {
-    const response = await fetch(path, {method:body?'POST':'GET', cache:'no-store',
-      headers:body?{'Content-Type':'application/json'}:{}, body:body && JSON.stringify(body),
+    const response = await fetch(role === 'admin' ? path + '?view=admin' : path, {method:body?'POST':'GET', cache:'no-store',
+      headers:body?{'Content-Type':'application/json', 'X-Seat-Viewer':state.viewer_id}:{}, body:body && JSON.stringify(body),
       signal:controller.signal});
     const data = await response.json();
+    if (data.identity_changed) location.reload();
     if(response.status >= 500) throw Error();
     return {response, data};
   } finally {clearTimeout(timeout);}
@@ -182,7 +202,7 @@ async function sync(version) {
       timer=setTimeout(()=>sync(version),2000);
       return;
     }
-    live=new EventSource('/api/live');
+    live=new EventSource(role === 'admin' ? '/api/live?view=admin' : '/api/live');
     const watchdog=()=>{
       clearTimeout(timer);
       timer=setTimeout(fail,15000);
@@ -205,6 +225,17 @@ async function sync(version) {
   }
 }
 window.addEventListener('online',()=>restart());
+window.addEventListener('storage', event => {
+  if (event.key === 'seat-account-change') location.reload();
+});
+if (role === 'student') $('logout').onclick = async () => {
+  try {
+    const {response, data} = await api('/api/student/logout', {});
+    if (!response.ok) { $('message').textContent = data.error; return; }
+    localStorage.setItem('seat-account-change', String(Date.now()));
+    location.replace('/');
+  } catch { $('message').textContent = '로그아웃하지 못했습니다. 연결을 확인하세요.'; }
+};
 window.addEventListener('offline',()=>restart());
 window.addEventListener('pageshow',()=>restart());
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)restart();});

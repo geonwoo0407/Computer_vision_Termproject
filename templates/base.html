@@ -1,2 +1,34 @@
-<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#ffffff"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="default"><meta name="apple-mobile-web-app-title" content="열람실 좌석"><link rel="manifest" href="/manifest.webmanifest"><link rel="apple-touch-icon" href="/static/icons/seat-192.png"><title>SEAT / 열람실 좌석 관리</title><link rel="stylesheet" href="/static/style.css"><script defer src="/static/app.js"></script><script defer src="/static/pwa.js"></script></head>
-<body data-role="{% block role %}{% endblock %}"><header><a class="brand" href="/">SEAT<span>VISION LAB</span></a><nav><a href="/">학생</a><a href="/admin">관리자</a><a href="/demo">시연 테스트</a><button id="install-app" class="install-button" hidden>앱 설치</button></nav></header><main><div class="eyebrow">SEAT / 제1열람실</div><h1>{% block title %}{% endblock %}</h1><p class="intro">{% block intro %}{% endblock %}</p><div class="notice">발표용 앱 · 브라우저별 예약자 구분 · 관리자 인증 사용 · 카메라 인식 및 LED 제어 미구현</div><p id="identity" class="intro"></p><div id="connection" role="status">서버 연결 중…</div><div id="summary" class="summary"></div><section class="panel"><div class="panelhead"><h2>제1열람실</h2><span id="mode"></span></div><div class="legend"><span class="blue">● 빈 좌석</span><span class="red">● 예약 좌석</span><span class="orange">● 미예약 이용 / 짐 확인</span><span>◷ 자리 비움은 색상 유지</span></div><div class="roomlabel">창가 · WINDOW</div><div id="seats" class="floor"><div id="north" class="bank bank-north" aria-label="1번부터 6번 좌석"></div><div id="south" class="bank bank-south" aria-label="7번부터 12번 좌석"></div></div><div class="roomlabel">출입구 · ENTRANCE</div></section><div id="message" role="status"></div><section class="panel" id="detail" aria-label="선택 좌석"></section><section id="controls" class="panel" hidden></section><footer>좌석 상태는 서버에서 공유됩니다</footer></main></body></html>
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#ffffff"><meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default"><meta name="apple-mobile-web-app-title" content="열람실 좌석">
+  <link rel="manifest" href="/manifest.webmanifest"><link rel="apple-touch-icon" href="/static/icons/seat-192.png">
+  <title>SEAT / 열람실 좌석 관리</title><link rel="stylesheet" href="/static/style.css">
+  {% block scripts %}<script defer src="/static/app.js"></script>{% endblock %}
+  <script defer src="/static/pwa.js"></script>
+</head>
+<body data-role="{% block role %}{% endblock %}">
+  <header><a class="brand" href="/">SEAT<span>VISION LAB</span></a>
+    <nav><a href="/">학생</a><a href="/admin">관리자</a><a href="/demo">시연 테스트</a><button id="install-app" class="install-button" hidden>앱 설치</button></nav>
+  </header>
+  <main>
+    <div class="eyebrow">SEAT / 제1열람실</div><h1>{% block title %}{% endblock %}</h1>
+    {% block content %}
+    <p class="intro">{% block intro %}{% endblock %}</p>
+    {% block account %}{% endblock %}
+    <div id="connection" role="status">서버 연결 중…</div><div id="summary" class="summary"></div>
+    <section class="panel">
+      <div class="panelhead"><h2>제1열람실</h2><span id="mode"></span></div>
+      <div class="legend">{% block legend %}<span class="blue">● 빈 좌석</span><span class="red">● 예약 좌석</span><span class="orange">● 미예약 이용 / 짐 확인</span><span>◷ 자리 비움은 색상 유지</span>{% endblock %}</div>
+      <div class="roomlabel">창가 · WINDOW</div>
+      <div id="seats" class="floor"><div id="north" class="bank bank-north" aria-label="1번부터 6번 좌석"></div><div id="south" class="bank bank-south" aria-label="7번부터 12번 좌석"></div></div>
+      <div class="roomlabel">출입구 · ENTRANCE</div>
+    </section>
+    <div id="message" role="status"></div><section class="panel" id="detail" aria-label="선택 좌석"></section>
+    <section id="controls" class="panel" hidden></section><footer>좌석 상태는 서버에서 공유됩니다</footer>
+    {% endblock %}
+  </main>
+</body>
+</html>

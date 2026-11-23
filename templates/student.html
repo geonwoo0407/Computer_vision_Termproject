@@ -1,1 +1,12 @@
-{% extends 'base.html' %}{% block role %}student{% endblock %}{% block title %}열람실 좌석 예약{% endblock %}{% block intro %}책상을 눌러 좌석을 선택하세요.{% endblock %}
+{% extends 'base.html' %}
+{% block role %}student{% endblock %}
+{% block title %}열람실 좌석 예약{% endblock %}
+{% block intro %}책상을 눌러 좌석을 선택하세요.{% endblock %}
+{% block account %}
+<div class="account-bar">
+  <span id="identity"></span>
+  <span id="guest-links" hidden><a href="/login">로그인</a> · <a href="/register">회원가입</a></span>
+  <button id="logout" type="button" hidden>로그아웃</button>
+</div>
+{% endblock %}
+{% block legend %}<span class="blue">● 예약 가능</span><span class="red">● 이용 중</span>{% endblock %}

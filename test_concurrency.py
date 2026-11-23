@@ -6,6 +6,7 @@ from tempfile import TemporaryDirectory
 from unittest import TestCase
 
 from app import create_app
+from test_app import register
 
 def authenticate(app, client):
     app.config['STAFF_PASSWORD'] = 'test-only'
@@ -20,7 +21,8 @@ class SharedRoom(TestCase):
         self.addCleanup(tmp.cleanup)
         app = create_app(str(Path(tmp.name) / 'seats.db'))
         self.a, self.b = app.test_client(), app.test_client()
-        for client in (self.a, self.b):
+        for index, client in enumerate((self.a, self.b)):
+            register(client, 'student' + str(index))
             self.assertEqual(len(client.get('/api/seats').json['seats']), 12)
 
     def simultaneous(self, first, second):
@@ -50,7 +52,7 @@ class SharedRoom(TestCase):
     def test_stream_and_move_keep_tracking(self):
         authenticate(self.a.application,self.a)
         authenticate(self.b.application,self.b)
-        stream = self.b.get('/api/live', buffered=False)
+        stream = self.b.get('/api/live?view=admin', buffered=False)
         self.addCleanup(stream.close)
         messages = iter(stream.response)
         next(messages)
@@ -94,6 +96,8 @@ class SharedRoom(TestCase):
     def test_many_clients(self):
         import time
         clients=[self.a.application.test_client() for _ in range(24)]
+        for index, client in enumerate(clients):
+            register(client, 'racer' + str(index))
         gate=threading.Barrier(len(clients))
         def compete(pair):
             i,client=pair

@@ -1,0 +1,14 @@
+{% extends 'base.html' %}
+{% block role %}account{% endblock %}
+{% block scripts %}<script defer src="/static/account.js"></script>{% endblock %}
+{% block title %}학생 {{ '회원가입' if registering else '로그인' }}{% endblock %}
+{% block content %}
+<form id="student-account" class="panel account-form" method="post" action="{{ '/api/student/register' if registering else '/api/student/login' }}">
+  {% if registering %}<label>이름<input name="name" autocomplete="name" maxlength="40" required></label>{% endif %}
+  <label>로그인 아이디<input name="login_id" autocomplete="username" maxlength="64" required></label>
+  <label>비밀번호<input type="password" name="password" autocomplete="{{ 'new-password' if registering else 'current-password' }}" maxlength="128" {% if registering %}minlength="8" placeholder="8자 이상"{% endif %} required></label>
+  <p id="account-error" role="alert" hidden></p>
+  <button type="submit">{{ '가입하고 시작하기' if registering else '로그인' }}</button>
+  <a href="{{ '/login' if registering else '/register' }}">{{ '이미 계정이 있어요 · 로그인' if registering else '처음 이용하나요? 회원가입' }}</a>
+</form>
+{% endblock %}
