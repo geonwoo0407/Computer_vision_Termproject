@@ -2,6 +2,7 @@ services:
   - type: web
     name: hello-flask-seat
     runtime: python
+    region: singapore
     plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn --worker-class gthread --workers 1 --threads 16 --timeout 0 --bind 0.0.0.0:$PORT app:app

@@ -17,9 +17,11 @@ python app.py
 이 프로젝트에는 Render 배포 설정인 `render.yaml`이 포함되어 있습니다. 배포하면
 PC를 끈 상태에서도 Render가 제공한 HTTPS 주소로 휴대폰에서 접속할 수 있습니다.
 
-1. 이 폴더를 새 GitHub 저장소에 올립니다. `.gitignore`에 의해 가상환경,
-   로컬 SQLite DB, 세션 비밀키는 업로드되지 않습니다.
-2. Render Dashboard에서 **New > Blueprint**를 선택하고 GitHub 저장소를 연결합니다.
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/geonwoo0407/Computer_vision_Termproject)
+
+1. 위 **Deploy to Render** 버튼을 누르거나 Render Dashboard에서
+   **New > Blueprint**를 선택하고 `Computer_vision_Termproject` 저장소를 연결합니다.
+   `.gitignore`에 의해 가상환경, 로컬 SQLite DB, 세션 비밀키는 업로드되지 않습니다.
 3. Blueprint가 `render.yaml`을 읽으면 `SEAT_ADMIN_PASSWORD`에 관리자 화면에서
    사용할 새 비밀번호를 입력합니다. 이 값은 코드나 GitHub에 적지 않습니다.
 4. 배포가 끝나면 표시되는 `https://...onrender.com` 주소를 휴대폰에서 엽니다.
