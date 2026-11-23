@@ -30,6 +30,17 @@
 .desk.empty {border-color:#bed8f5}
 .desk.reserved {border-color:#f1c9ce}
 .desk.unreserved {border-color:#efd4ae}
+[data-admin-state="available"] {--rail:#3077b3; --seat-fill:#edf5ff; --seat-edge:#bed8f5}
+[data-admin-state="in-use"] {--rail:#b23e53; --seat-fill:#ffedf0; --seat-edge:#edc0c9}
+[data-admin-state="unreserved-use"] {--rail:#a75308; --seat-fill:#fff1de; --seat-edge:#edcb98}
+[data-admin-state="return-pending"] {--rail:#7444a7; --seat-fill:#f3ecfc; --seat-edge:#d8c2ee}
+.desk[data-admin-state] {background:var(--seat-fill); border-color:var(--seat-edge)}
+.legend [data-admin-state]::before, #detail h2 [data-admin-state]::before {
+  content:''; display:inline-block; width:.8em; height:.8em; border-radius:50%;
+  background:var(--rail); margin-inline-end:.35em;
+}
+.summary [data-admin-state] {border-top:3px solid var(--rail)}
+.summary [data-admin-state] strong {color:var(--rail)}
 .desk::after {content:''; position:absolute; top:27%; height:46%; width:.37em; background:var(--rail)}
 .desk:nth-child(odd) {border-left:.28em solid var(--rail); border-radius:.45em .12em .12em .45em}
 .desk:nth-child(odd)::after {left:-.75em; border-radius:.25em 0 0 .25em}

@@ -1,1 +1,7 @@
-{% extends 'base.html' %}{% block role %}admin{% endblock %}{% block title %}열람실 운영 현황{% endblock %}{% block intro %}예약 권한과 미예약 이용 경고를 한눈에 관리하세요.{% endblock %}
+{% extends 'base.html' %}{% block role %}admin{% endblock %}{% block title %}열람실 운영 현황{% endblock %}{% block intro %}좌석별 이용 상태와 예약 권한을 관리하세요.{% endblock %}
+{% block legend %}
+  <span data-admin-state="available">예약 가능</span>
+  <span data-admin-state="in-use">이용 중</span>
+  <span data-admin-state="unreserved-use">미예약 이용중</span>
+  <span data-admin-state="return-pending">반납 대기 중</span>
+{% endblock %}

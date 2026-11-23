@@ -1,6 +1,8 @@
 const $ = id => document.getElementById(id);
 const role = document.body.dataset.role;
 let state, selected = role === 'student' ? null : 1, pending = false, offset = 0, live;
+const adminLabels = new Map(Array.from(document.querySelectorAll('.legend [data-admin-state]'),
+  node => [node.dataset.adminState, node.textContent]));
 const floor = $('seats');
 const desks = new Map(Array.from(floor.querySelectorAll('[data-seat-id]'),
   button => [Number(button.dataset.seatId), button]));
@@ -112,7 +114,12 @@ function tick() {
   for (const node of document.querySelectorAll('[data-since]'))
     node.textContent = elapsed(Number(node.dataset.since));
 }
+function adminSeatState(seat) {
+  if (adminLabels.has(seat.admin_status)) return seat.admin_status;
+  return seat.color === 'empty' ? 'available' : 'in-use';
+}
 function seatLabel(seat) {
+  if (role === 'admin') return adminLabels.get(adminSeatState(seat));
   if (role === 'student') return seat.color === 'empty' ? '예약 가능' : '이용 중';
   return seat.status;
 }
@@ -121,7 +128,12 @@ function drawMap() {
     const desk = desks.get(s.id);
     if (!desk) continue;
     desk.disabled = false;
-    desk.className = 'desk ' + (role === 'student' && s.color !== 'empty' ? 'reserved' : s.color);
+    if (role === 'admin') {
+      desk.className = 'desk';
+      desk.dataset.adminState = adminSeatState(s);
+    } else {
+      desk.className = 'desk ' + (role === 'student' && s.color !== 'empty' ? 'reserved' : s.color);
+    }
     desk.setAttribute('aria-pressed', String(selected === s.id));
     desk.replaceChildren(element('strong', String(s.id).padStart(2,'0')),
       element('span', seatLabel(s)));
@@ -138,7 +150,11 @@ function drawMap() {
 function drawDetail() {
   const s = state.seats.find(seat => seat.id === selected);
   const panel = $('detail');
-  panel.replaceChildren(element('h2', selected + '번 좌석 · ' + seatLabel(s)));
+  const heading = element('h2', selected + '번 좌석 · ');
+  const label = element('span', seatLabel(s));
+  if (role === 'admin') label.dataset.adminState = adminSeatState(s);
+  heading.append(label);
+  panel.replaceChildren(heading);
   if (role !== 'student') panel.append(element('p', '사람 ' + (s.occupied?'감지':'없음') + ' · 소지품 ' + (s.belongings?'있음':'없음')));
   const actions = element('div','','actions');
   panel.append(actions);
@@ -162,16 +178,32 @@ function drawDetail() {
     control(actions,s.reserved?'예약 해제':'예약 부여',()=>action(s.reserved?'revoke':'grant'));
   }
   if(role!=='student' && s.updated) panel.append(element('p','마지막 감지 · '+new Date(s.updated*1000).toLocaleTimeString()));
-  if(role!=='student' && s.warning) panel.append(element('p','미예약 이용 또는 소지품 확인 필요','warning'));
+  if(role==='demo' && s.warning) panel.append(element('p','미예약 이용 또는 소지품 확인 필요','warning'));
+}
+function seatCounts() {
+  if (role === 'admin') {
+    const totals = new Map(Array.from(adminLabels.keys(), key => [key, 0]));
+    for (const seat of state.seats) {
+      const key = adminSeatState(seat);
+      totals.set(key, totals.get(key) + 1);
+    }
+    return Array.from(totals, ([key, count]) => [adminLabels.get(key), count, key]);
+  }
+  return [
+    ['전체 좌석', state.seats.length],
+    ['예약 가능', state.seats.filter(s => s.color === 'empty').length],
+    ['자리 비움', state.seats.filter(s => s.away).length],
+    ['미예약 경고', state.seats.filter(s => s.warning).length],
+  ];
 }
 function draw() {
   if (role === 'student') { drawStudent(); return; }
   $('mode').textContent = state.mode==='demo'?'시연 모드':'카메라 API 모드';
-  const available = state.seats.filter(s=>s.color==='empty').length;
-  const counts = [['전체 좌석',state.seats.length],['예약 가능',available]];
-  counts.push(['자리 비움',state.seats.filter(s=>s.away).length],['미예약 경고',state.seats.filter(s=>s.warning).length]);
-  $('summary').replaceChildren(...counts.map(([label,n])=>{
-    const box=element('div',''); box.append(element('span',label),element('strong',n+'석')); return box;
+  $('summary').replaceChildren(...seatCounts().map(([label, count, key]) => {
+    const box = element('div', '');
+    if (key) box.dataset.adminState = key;
+    box.append(element('span', label), element('strong', count + '석'));
+    return box;
   }));
   drawMap(); drawDetail(); tick();
   if(role==='demo') {
