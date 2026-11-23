@@ -66,7 +66,7 @@ class SharedRoom(TestCase):
         self.assertFalse(new['mine'] or new['occupied'])
 
     def test_missing_response_and_delayed_packet(self):
-        for index, action in enumerate(('reserve','move','return','reserve','cancel')):
+        for index, action in enumerate(('reserve','move','return')):
             seat = 2 if action=='return' else 1
             body = dict(action=action,seat_id=seat,request_id=str(index))
             if action=='move':

@@ -35,7 +35,7 @@ body[data-role=student] main {max-width:900px; padding:0 0 20px}
 .ticket-rows dt {text-align:right; color:#526374}
 .ticket-rows dd {margin:0; font-variant-numeric:tabular-nums}
 .ticket-actions,.secondary-actions {display:flex; justify-content:center; align-items:center; gap:10px; margin-top:14px}
-.secondary-actions a,.secondary-actions button {background:none; border:0; text-decoration:underline; padding:4px; font:inherit; font-size:13px}
+.secondary-actions a {padding:4px; font-size:13px; text-decoration:underline}
 body[data-role=student] #connection,body[data-role=student] #message {margin:8px 16px; text-align:center; font-size:13px}
 #connection[data-online=true] {display:none}
 #seat-dialog {padding:0; border:0; width:min(88vw,410px); color:#192634; box-shadow:0 12px 40px #1114}

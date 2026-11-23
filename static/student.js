@@ -43,7 +43,7 @@ function closeStudentDialog() {
 function showStudentDialog(kind) {
   dialogKind = kind;
   dialogError = '';
-  if (kind === 'return' || kind === 'cancel') displayedTicket = state.my_reservation;
+  if (kind === 'return') displayedTicket = state.my_reservation;
   updateStudentDialog();
   if (!$('seat-dialog').open) $('seat-dialog').showModal();
 }
@@ -78,16 +78,14 @@ function updateStudentDialog() {
     title = '반납처리'; prompt = '정상적으로 반납되었습니다.'; dismiss = ''; label = 'OK';
     confirmAction = () => { closeStudentDialog(); draw(); };
   } else {
-    const returning = dialogKind === 'return';
-    title = returning ? '반납처리' : '예약 취소';
-    prompt = returning ? '이용 중인 좌석을 반납하시겠습니까?' : '이 좌석의 예약을 취소하시겠습니까?';
+    title = '반납처리'; prompt = '이용 중인 좌석을 반납하시겠습니까?';
     dismiss = '아니오'; label = '예'; needsServer = true;
     const ticket = displayedTicket;
     if (!mine || mine.id !== ticket.id || mine.seat_id !== ticket.seat_id) {
       if (!pending) statusText = '배정 정보가 변경되었습니다.';
       needsServer = false; confirmAction = null;
     } else {
-      confirmAction = () => send({action:returning ? 'return' : 'cancel', seat_id:ticket.seat_id, reservation_id:ticket.id});
+      confirmAction = () => send({action:'return', seat_id:ticket.seat_id, reservation_id:ticket.id});
     }
   }
   $('dialog-title').textContent = title;
@@ -134,10 +132,8 @@ function drawStudent() {
     if (ticket) {
       $('ticket-seat').textContent = roomName + ' / ' + ticket.seat_id + '번';
       $('ticket-time').textContent = ticket.created == null ? '기록 없음' : ticketDate.format(ticket.created * 1000);
-      const seat = state.seats.find(s => s.id === ticket.seat_id);
-      $('cancel-reservation').hidden = seat.used;
       $('favorite-seat').textContent = state.favorites.includes(ticket.seat_id) ? '★ 선호좌석 해제' : '☆ 선호좌석';
-      for (const id of ['return-seat', 'favorite-seat', 'cancel-reservation']) $(id).disabled = pending || !connected;
+      for (const id of ['return-seat', 'favorite-seat']) $(id).disabled = pending || !connected;
     } else if (state.viewer_name) {
       $('ticket-empty').textContent = '좌석배정 정보가 없습니다.';
     } else {
@@ -152,7 +148,7 @@ function studentActionResult(action, error) {
     dialogError = error;
     return;
   }
-  if (['reserve','move','return','cancel'].includes(action)) {
+  if (['reserve','move','return'].includes(action)) {
     if (studentPage !== 'ticket') {
       history.pushState(null, '', '#ticket');
       studentRoute();
@@ -168,7 +164,6 @@ function initStudent() {
     if (!pending) { closeStudentDialog(); draw(); }
   });
   $('return-seat').onclick = () => showStudentDialog('return');
-  $('cancel-reservation').onclick = () => showStudentDialog('cancel');
   $('favorite-seat').onclick = () => {
     const id = state.my_reservation.seat_id;
     send({action:state.favorites.includes(id) ? 'unfavorite' : 'favorite', seat_id:id});

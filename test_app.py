@@ -77,13 +77,11 @@ class SeatTests(unittest.TestCase):
         other=self.app.test_client()
         register(other, '00240002')
         self.assertFalse(other.get('/api/seats').json['seats'][0]['mine'])
-        for act in ('return','cancel'):
-            self.assertEqual(403,other.post('/api/action',json={'action':act,'seat_id':1}).status_code)
+        self.assertEqual(403,other.post('/api/action',json={'action':'return','seat_id':1}).status_code)
         self.assertEqual(200,self.action('return').status_code)
         self.assertEqual(409,self.action('return').status_code)
     def test_return_occupied_and_auto_exit(self):
         self.action('reserve');self.detect(True,True)
-        self.assertEqual(409,self.action('cancel').status_code)
         self.action('return');self.assertEqual('unreserved',self.seat()['color'])
         self.assertTrue(self.seat()['occupied']);self.assertTrue(self.seat()['used'])
         self.detect(False,True);self.assertTrue(self.seat()['away'])
@@ -99,12 +97,15 @@ class SeatTests(unittest.TestCase):
     def test_return_unknown_bags_no_false_away(self):
         self.action('reserve');self.detect(False,True);self.action('return')
         self.assertEqual('unreserved',self.seat()['color']);self.assertFalse(self.seat()['away'])
-    def test_cancel_distinct_audit(self):
-        self.action('reserve');self.action('cancel');self.action('reserve');self.action('return')
+    def test_return_releases_a_new_reservation(self):
+        self.action('reserve')
+        self.assertEqual(400, self.action('cancel').status_code)
+        self.assertTrue(self.seat()['reserved'])
+        self.assertEqual(200, self.action('return').status_code)
         import sqlite3
         with closing(sqlite3.connect(self.app.config['DATABASE'])) as c, c:
             acts=[r[0] for r in c.execute('SELECT action FROM reservation_events ORDER BY id')]
-        self.assertEqual(['reserve','cancel','reserve','return'],acts)
+        self.assertEqual(['reserve','return'],acts)
     def test_admin_assignment(self):
         other=self.app.test_client();register(other,'00240002','이민서')
         self.action('grant',student_number='00240002')
@@ -164,7 +165,7 @@ class SeatTests(unittest.TestCase):
                 packet = json.loads(next(iter(stream.response)).decode().removeprefix('data: '))
                 redacted(packet['seats'][0])
             redacted(client.post('/api/result'+query,json={'request_id':'missing'}).json['state']['seats'][0])
-        self.assertEqual(other.post('/api/action',json={'action':'cancel','seat_id':1}).status_code,403)
+        self.assertEqual(other.post('/api/action',json={'action':'return','seat_id':1}).status_code,403)
 
     def test_personal_ticket_favorites_and_stale_return(self):
         other = self.app.test_client()
@@ -211,20 +212,12 @@ class SeatTests(unittest.TestCase):
         other.post('/api/student/logout', json={})
         self.assertEqual(other.get('/admin/students').location, '/login')
 
-    def test_legacy_student_can_link_number_and_keep_reservation(self):
-        import sqlite3
-        self.action('reserve')
-        with closing(sqlite3.connect(self.app.config['DATABASE'])) as db, db:
-            db.execute("UPDATE students SET login_id='legacy-user' WHERE login_id='00240001'")
-        guest = self.app.test_client()
-        register(guest, '00240002')
-        payload = dict(legacy_id='legacy-user', student_number='00240002', password='seat-test123')
-        self.assertEqual(guest.post('/api/student/link-number', json=payload).status_code, 409)
-        payload['student_number'] = '00240009'
-        self.assertEqual(guest.post('/api/student/link-number', json={**payload, 'password':'wrong'}).status_code, 401)
-        self.assertEqual(guest.post('/api/student/link-number', json=payload).status_code, 200)
-        self.assertEqual(guest.get('/api/seats').json['my_reservation']['seat_id'], 1)
-        self.assertEqual(guest.post('/api/student/link-number', json=payload).status_code, 401)
+    def test_login_has_only_registration_and_no_linking_route(self):
+        page = self.c.get('/login')
+        self.assertIn('href="/register"', page.text)
+        self.assertNotIn('link-student-number', page.text)
+        self.assertEqual(self.c.get('/link-student-number').status_code, 404)
+        self.assertEqual(self.c.post('/api/student/link-number', json={}).status_code, 404)
 
     def test_account_changes_reject_stale_tab_action(self):
         before = self.c.get('/api/seats').json['viewer_id']

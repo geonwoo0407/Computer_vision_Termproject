@@ -101,10 +101,8 @@ def create_app(database=None):
 
     @app.get('/login')
     @app.get('/register')
-    @app.get('/link-student-number')
     def account_page():
-        return render_template('account.html', registering=request.path == '/register',
-                               linking=request.path == '/link-student-number')
+        return render_template('account.html', registering=request.path == '/register')
 
     @app.post('/api/login')
     def login():
@@ -118,7 +116,7 @@ def create_app(database=None):
         if operation == 'logout':
             session.clear()
             return jsonify(ok=True)
-        if operation not in ('register', 'login', 'link-number'):
+        if operation not in ('register', 'login'):
             return jsonify(error='지원하지 않는 계정 요청입니다.'), 404
         number = data.get('student_number', data.get('login_id'))
         password = data.get('password')
@@ -134,7 +132,7 @@ def create_app(database=None):
             session['staff'] = staff_tag()
             return jsonify(ok=True, role='admin')
         if not student_number(number):
-            return jsonify(error='학번은 숫자로 입력하세요. 기존 문자 아이디는 학번 연결을 이용하세요.'), 400
+            return jsonify(error='학번은 숫자로 입력하세요.'), 400
         if len(password) > 128:
             return jsonify(error='비밀번호를 확인하세요.'), 400
         with closing(connect()) as c, c:
@@ -151,24 +149,10 @@ def create_app(database=None):
                 if not inserted.rowcount:
                     return jsonify(error='이미 등록된 학번입니다.'), 409
             else:
-                identifier = data.get('legacy_id') if operation == 'link-number' else number
-                if not isinstance(identifier, str) or not 1 <= len(identifier.strip()) <= 64:
-                    return jsonify(error='로그인 정보를 확인하세요.'), 401
-                identifier = identifier.strip()
-                if operation == 'link-number' and student_number(identifier):
-                    return jsonify(error='이미 학번으로 로그인할 수 있는 계정입니다.'), 400
-                row = c.execute('SELECT id,password_hash FROM students WHERE login_id=?', (identifier,)).fetchone()
+                row = c.execute('SELECT id,password_hash FROM students WHERE login_id=?', (number,)).fetchone()
                 if not row or not check_password_hash(row['password_hash'], password):
                     return jsonify(error='로그인 정보를 확인하세요.'), 401
                 student_id = row['id']
-                if operation == 'link-number':
-                    try:
-                        updated = c.execute('UPDATE students SET login_id=? WHERE id=? AND login_id=?',
-                                            (number, student_id, identifier))
-                    except sqlite3.IntegrityError:
-                        return jsonify(error='이미 등록된 학번입니다.'), 409
-                    if not updated.rowcount:
-                        return jsonify(error='계정 정보가 변경되었습니다. 다시 로그인하세요.'), 409
         session.clear()
         session['student_id'] = student_id
         session.permanent = True
@@ -275,7 +259,7 @@ def create_app(database=None):
         data = request.get_json(silent=True)
         if not isinstance(data, dict): return jsonify(error='JSON 객체가 필요합니다.'),400
         act = data.get('action')
-        if act in ('reserve','move','cancel','return','favorite','unfavorite') and g.student is None:
+        if act in ('reserve','move','return','favorite','unfavorite') and g.student is None:
             return jsonify(error='학생 로그인 후 이용하세요.'), 401
         with closing(connect()) as c, c:
             c.execute('BEGIN IMMEDIATE')
@@ -343,7 +327,7 @@ def create_app(database=None):
                     c.execute('DELETE FROM favorites WHERE student_id=? AND seat_id=?', (g.viewer, s['id']))
                 c.execute('UPDATE changes SET revision=revision+1 WHERE id=1')
                 return
-            if act in ('return', 'cancel', 'move') and 'reservation_id' in data:
+            if act in ('return', 'move') and 'reservation_id' in data:
                 current = c.execute("SELECT id FROM reservations WHERE seat_id=? AND owner_id=? AND status='active'",
                                     (s['id'], g.viewer)).fetchone()
                 if not current or current['id'] != data['reservation_id']:
@@ -387,13 +371,11 @@ def create_app(database=None):
                 c.execute('INSERT INTO reservation_events(seat_id,action,actor,owner_id,created) VALUES (?,?,?,?,?)',
                           (target_id,'move_in',previous_owner,previous_owner,time.time()))
                 s.update(reserved=0, owner_id=None)
-            elif act in ('cancel','return','revoke'):
+            elif act in ('return','revoke'):
                 if act != 'revoke':
                     if not s['reserved']: return jsonify(error='이미 해제된 예약입니다.'),409
                     if s['owner_id'] != g.viewer:
-                        return jsonify(error='본인이 예약한 좌석만 취소하거나 반납할 수 있습니다.'),403
-                    if act == 'cancel' and s['used']:
-                        return jsonify(error='이용을 시작한 좌석은 반납하기를 이용하세요.'),409
+                        return jsonify(error='본인이 배정받은 좌석만 반납할 수 있습니다.'),403
                 s.update(reserved=0, owner_id=None)
             elif act == 'detect':
                 source = data.get('source')
@@ -414,7 +396,7 @@ def create_app(database=None):
             else: return jsonify(error='알 수 없는 동작'),400
             if not s['reserved'] and not s['occupied'] and not s['belongings']: s.update(used=0,away_since=None)
             c.execute('UPDATE seats SET reserved=?,occupied=?,belongings=?,used=?,away_since=?,updated=?,owner_id=?,belongings_owner_id=? WHERE id=?', tuple(s[k] for k in ('reserved','occupied','belongings','used','away_since','updated','owner_id','belongings_owner_id','id')))
-            if act in ('reserve','grant','assign_owner','cancel','return','revoke','move'):
+            if act in ('reserve','grant','assign_owner','return','revoke','move'):
                 c.execute('INSERT INTO reservation_events(seat_id,action,actor,owner_id,created) VALUES (?,?,?,?,?)',
                           (s['id'],act,g.viewer,s['owner_id'] or previous_owner,time.time()))
         now = time.time()
@@ -423,7 +405,7 @@ def create_app(database=None):
                       (s['id'],s['owner_id'],now,now))
         elif act == 'reset':
             c.execute("UPDATE reservations SET status='reset',modified=? WHERE status='active'", (now,))
-        elif act in ('move','assign_owner','cancel','return','revoke'):
+        elif act in ('move','assign_owner','return','revoke'):
             c.execute("""UPDATE reservations SET seat_id=?,owner_id=?,status=?,modified=?
                          WHERE seat_id=? AND status='active'""",
                       (target_id if act=='move' else s['id'], s['owner_id'] or previous_owner,
