@@ -6,13 +6,7 @@ from tempfile import TemporaryDirectory
 from unittest import TestCase
 
 from app import create_app
-from test_app import register
-
-def authenticate(app, client):
-    app.config['STAFF_PASSWORD'] = 'test-only'
-    with client.get('/admin', auth=('admin','test-only')) as response:
-        assert response.status_code == 200
-
+from test_app import register, authenticate
 
 
 class SharedRoom(TestCase):
@@ -22,7 +16,7 @@ class SharedRoom(TestCase):
         app = create_app(str(Path(tmp.name) / 'seats.db'))
         self.a, self.b = app.test_client(), app.test_client()
         for index, client in enumerate((self.a, self.b)):
-            register(client, 'student' + str(index))
+            register(client, '240001' + str(index))
             self.assertEqual(len(client.get('/api/seats').json['seats']), 288)
 
     def simultaneous(self, first, second):
@@ -50,15 +44,16 @@ class SharedRoom(TestCase):
             self.assertEqual([s['id'] for s in seats if s['mine']], [12 if code==200 else source])
 
     def test_stream_and_move_keep_tracking(self):
-        authenticate(self.a.application,self.a)
-        authenticate(self.b.application,self.b)
-        stream = self.b.get('/api/live?view=admin', buffered=False)
+        staff = self.a.application.test_client()
+        authenticate(self.a.application, staff)
+        stream = staff.get('/api/live?view=admin', buffered=False)
         self.addCleanup(stream.close)
         messages = iter(stream.response)
         next(messages)
         for data in [dict(action='reserve'),dict(action='detect', source='demo', occupied=True, belongings=True),
                      dict(action='detect', source='demo', occupied=False, belongings=True, belongings_owner_id='bag-A')]:
-            res = self.a.post('/api/action', json=dict(seat_id=1, **data))
+            client = self.a if data['action'] == 'reserve' else staff
+            res = client.post('/api/action', json=dict(seat_id=1, **data))
         since = res.json['seats'][0]['away_since']
         req = dict(action='move',seat_id=1,target_id=12)
         self.assertEqual(self.b.post('/api/action',json=req).status_code, 403)
@@ -97,7 +92,7 @@ class SharedRoom(TestCase):
         import time
         clients=[self.a.application.test_client() for _ in range(24)]
         for index, client in enumerate(clients):
-            register(client, 'racer' + str(index))
+            register(client, '240002' + str(index))
         gate=threading.Barrier(len(clients))
         def compete(pair):
             i,client=pair

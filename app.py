@@ -3,7 +3,7 @@ import os, sqlite3, time, secrets, json
 from threading import Condition
 from contextlib import closing
 from datetime import timedelta
-from flask import Flask, g, render_template, request, jsonify, session, Response, send_from_directory
+from flask import Flask, g, render_template, request, jsonify, session, redirect, Response, send_from_directory
 from werkzeug.security import check_password_hash, generate_password_hash
 
 SEAT_COUNT = 288
@@ -67,16 +67,16 @@ def create_app(database=None):
     def staff():
         return bool(staff_tag() and session.get('staff') == staff_tag())
 
+    def staff_password_matches(password):
+        configured = app.config['STAFF_PASSWORD']
+        return bool(configured and isinstance(password, str) and
+                    secrets.compare_digest(password.encode(), configured.encode()))
+
+    def student_number(value):
+        return isinstance(value, str) and 1 <= len(value) <= 64 and value.isascii() and value.isdigit()
+
     def staff_page(template):
-        if not staff():
-            auth = request.authorization
-            password = app.config['STAFF_PASSWORD']
-            if not password:
-                return '관리자 비밀번호 SEAT_ADMIN_PASSWORD 설정이 필요합니다.', 503
-            if not auth or auth.username != 'admin' or not secrets.compare_digest((auth.password or '').encode(), password.encode()):
-                return Response(status=401, headers={'WWW-Authenticate':'Basic realm="Seat staff"'})
-            session['staff'] = staff_tag()
-        return render_template(template)
+        return render_template(template) if staff() else redirect('/login')
     changed = Condition()
 
     def available(seat):
@@ -101,8 +101,14 @@ def create_app(database=None):
 
     @app.get('/login')
     @app.get('/register')
+    @app.get('/link-student-number')
     def account_page():
-        return render_template('account.html', registering=request.path == '/register')
+        return render_template('account.html', registering=request.path == '/register',
+                               linking=request.path == '/link-student-number')
+
+    @app.post('/api/login')
+    def login():
+        return student_account('login')
 
     @app.post('/api/student/<operation>')
     def student_account(operation):
@@ -112,14 +118,25 @@ def create_app(database=None):
         if operation == 'logout':
             session.clear()
             return jsonify(ok=True)
-        if operation not in ('register', 'login'):
+        if operation not in ('register', 'login', 'link-number'):
             return jsonify(error='지원하지 않는 계정 요청입니다.'), 404
-        login_id, password = data.get('login_id'), data.get('password')
-        if not isinstance(login_id, str) or not isinstance(password, str):
-            return jsonify(error='아이디와 비밀번호를 입력하세요.'), 400
-        login_id = login_id.strip()
-        if not 1 <= len(login_id) <= 64 or not 1 <= len(password) <= 128:
-            return jsonify(error='아이디 또는 비밀번호 길이를 확인하세요.'), 400
+        number = data.get('student_number', data.get('login_id'))
+        password = data.get('password')
+        if not isinstance(number, str) or not isinstance(password, str):
+            return jsonify(error='학번과 비밀번호를 입력하세요.'), 400
+        number = number.strip()
+        if not 1 <= len(number) <= 64 or not password:
+            return jsonify(error='학번과 비밀번호를 확인하세요.'), 400
+        if operation == 'login' and number == 'admin':
+            if not staff_password_matches(password):
+                return jsonify(error='로그인 정보를 확인하세요.'), 401
+            session.clear()
+            session['staff'] = staff_tag()
+            return jsonify(ok=True, role='admin')
+        if not student_number(number):
+            return jsonify(error='학번은 숫자로 입력하세요. 기존 문자 아이디는 학번 연결을 이용하세요.'), 400
+        if len(password) > 128:
+            return jsonify(error='비밀번호를 확인하세요.'), 400
         with closing(connect()) as c, c:
             if operation == 'register':
                 name = data.get('name')
@@ -130,24 +147,38 @@ def create_app(database=None):
                 student_id = 'student-' + secrets.token_hex(16)
                 inserted = c.execute("""INSERT INTO students(id, login_id, name, password_hash)
                     VALUES (?,?,?,?) ON CONFLICT(login_id) DO NOTHING""",
-                    (student_id, login_id, name.strip(), generate_password_hash(password)))
+                    (student_id, number, name.strip(), generate_password_hash(password)))
                 if not inserted.rowcount:
-                    return jsonify(error='이미 사용 중인 아이디입니다.'), 409
+                    return jsonify(error='이미 등록된 학번입니다.'), 409
             else:
-                row = c.execute('SELECT id,password_hash FROM students WHERE login_id=?', (login_id,)).fetchone()
+                identifier = data.get('legacy_id') if operation == 'link-number' else number
+                if not isinstance(identifier, str) or not 1 <= len(identifier.strip()) <= 64:
+                    return jsonify(error='로그인 정보를 확인하세요.'), 401
+                identifier = identifier.strip()
+                if operation == 'link-number' and student_number(identifier):
+                    return jsonify(error='이미 학번으로 로그인할 수 있는 계정입니다.'), 400
+                row = c.execute('SELECT id,password_hash FROM students WHERE login_id=?', (identifier,)).fetchone()
                 if not row or not check_password_hash(row['password_hash'], password):
-                    return jsonify(error='아이디 또는 비밀번호를 확인하세요.'), 401
+                    return jsonify(error='로그인 정보를 확인하세요.'), 401
                 student_id = row['id']
+                if operation == 'link-number':
+                    try:
+                        updated = c.execute('UPDATE students SET login_id=? WHERE id=? AND login_id=?',
+                                            (number, student_id, identifier))
+                    except sqlite3.IntegrityError:
+                        return jsonify(error='이미 등록된 학번입니다.'), 409
+                    if not updated.rowcount:
+                        return jsonify(error='계정 정보가 변경되었습니다. 다시 로그인하세요.'), 409
         session.clear()
         session['student_id'] = student_id
         session.permanent = True
-        return jsonify(ok=True)
+        return jsonify(ok=True, role='student')
 
     def view_context():
         return dict(viewer=g.viewer, viewer_name=g.student['name'] if g.student else None,
-                    privileged=request.args.get('view') == 'admin' and staff())
+                    is_staff=staff(), privileged=request.args.get('view') == 'admin' and staff())
 
-    def snapshot(c, viewer, viewer_name, privileged):
+    def snapshot(c, viewer, viewer_name, privileged, is_staff):
         now = time.time()
         seats = []
         query = ('SELECT s.*, a.name AS owner_name FROM seats s LEFT JOIN students a ON s.owner_id=a.id ORDER BY s.id'
@@ -170,11 +201,11 @@ def create_app(database=None):
                                               (viewer,))] if viewer_name else []
         return dict(revision=c.execute('SELECT revision FROM changes').fetchone()[0], viewer_id=viewer,
                     my_reservation=dict(ticket) if ticket else None, favorites=favorites,
-                    viewer_name=viewer_name, seats=seats, mode=c.execute('SELECT mode FROM settings').fetchone()[0], server_time=now)
+                    viewer_name=viewer_name, is_staff=is_staff, seats=seats, mode=c.execute('SELECT mode FROM settings').fetchone()[0], server_time=now)
 
     @app.after_request
     def private_api(response):
-        if request.path.startswith('/api/'):
+        if request.path.startswith(('/api/', '/admin', '/demo')):
             response.cache_control.no_store = True
         return response
     @app.get('/sw.js')
@@ -217,6 +248,21 @@ def create_app(database=None):
     def student(): return render_template('student.html')
     @app.get('/admin')
     def admin(): return staff_page('admin.html')
+    @app.route('/admin/students', methods=['GET', 'POST'])
+    def student_directory():
+        if not staff():
+            return redirect('/login')
+        query = request.form.get('q', '').strip()
+        sql = 'SELECT name, login_id FROM students'
+        params = ()
+        if query:
+            sql += ' WHERE login_id=?' if student_number(query) else ' WHERE instr(name, ?) > 0'
+            params = (query,)
+        with closing(connect()) as c:
+            students = [(name, number if student_number(number) else None)
+                        for name, number in c.execute(sql + ' ORDER BY name, login_id', params)]
+        return render_template('students.html', students=students, query=query)
+
     @app.get('/demo')
     def demo(): return staff_page('demo.html')
     @app.get('/api/seats')
@@ -238,8 +284,8 @@ def create_app(database=None):
             payload = json.dumps(data, sort_keys=True)
             if act in ('grant','assign_owner','revoke','mode','reset','detect') and not staff():
                 auth = request.authorization
-                password = app.config['STAFF_PASSWORD']
-                if not (password and auth and auth.username == 'admin' and secrets.compare_digest((auth.password or '').encode(), password.encode())):
+                if not (auth and not request.headers.get('Sec-Fetch-Mode') and auth.username == 'admin'
+                        and staff_password_matches(auth.password)):
                     return jsonify(error='관리자 인증이 필요합니다.'),403
             if token is not None:
                 if not isinstance(token,str) or not 1 <= len(token) <= 100:
@@ -309,15 +355,19 @@ def create_app(database=None):
                 if act == 'assign_owner' and not s['reserved']:
                     return jsonify(error='예약된 좌석만 소유자를 지정할 수 있습니다.'),409
                 owner = g.student['id'] if g.student else None
-                if act != 'reserve' and ('login_id' in data or 'owner_id' in data or act == 'assign_owner'):
-                    if 'login_id' in data:
+                if act != 'reserve' and ('student_number' in data or 'login_id' in data or 'owner_id' in data or act == 'assign_owner'):
+                    if 'student_number' in data:
+                        key, value = 'login_id', data['student_number']
+                        if not isinstance(value, str) or not student_number(value.strip()):
+                            return jsonify(error='학생 학번을 숫자로 입력하세요.'),400
+                    elif 'login_id' in data:
                         key, value = 'login_id', data['login_id']
                     else:
                         key, value = 'id', data.get('owner_id')
                     account = (c.execute(f'SELECT id FROM students WHERE {key}=?', (value.strip(),)).fetchone()
                                if isinstance(value, str) else None)
                     if account is None:
-                        return jsonify(error='가입한 학생의 로그인 아이디를 확인하세요.'),400
+                        return jsonify(error='가입한 학생의 학번을 확인하세요.'),400
                     owner = account['id']
                 if act == 'grant' and s['reserved']:
                     return jsonify(error='이미 예약된 좌석입니다.'),409

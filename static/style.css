@@ -58,3 +58,15 @@ body[data-role=student] .summary {grid-template-columns:repeat(3,minmax(0,1fr))}
 .entrance::before, .entrance::after {content:''; display:inline-block; width:1em; height:.85em; border:1px solid #8093a5; background:#e0e8ed; border-radius:0 100% 0 0}
 .entrance::after {transform:scaleX(-1)}
 .entrance span {position:absolute; bottom:1.7em; left:50%; transform:translateX(-50%); white-space:nowrap; font-size:.8em}
+
+header nav {align-items:center; flex-wrap:wrap}
+header nav [hidden] {display:none}
+#identity {color:#435c73; overflow-wrap:anywhere}
+.directory {max-width:760px}
+.directory label {display:block; margin-bottom:8px; font-weight:600}
+.directory-search {display:flex; flex-wrap:wrap; align-items:center; gap:8px}
+.directory-search input {flex:1; min-width:120px; padding:10px; font:inherit; border:1px solid #bccbd9; border-radius:7px}
+.directory-search a {color:#235887; padding:6px}
+.directory table {border-collapse:collapse; width:100%; margin-top:20px; text-align:left; table-layout:fixed}
+.directory th,.directory td {padding:12px 8px; border-bottom:1px solid #e1e8ef; overflow-wrap:anywhere}
+.directory th {color:#435c73; background:#f3f6fa}

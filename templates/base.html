@@ -7,11 +7,26 @@
   <link rel="manifest" href="/manifest.webmanifest"><link rel="apple-touch-icon" href="/static/icons/seat-192.png">
   <title>SEAT / 열람실 좌석 관리</title><link rel="stylesheet" href="/static/style.css">
   {% block scripts %}<script defer src="/static/app.js"></script>{% endblock %}
+  <script defer src="/static/nav.js"></script>
   <script defer src="/static/pwa.js"></script>
 </head>
 <body data-role="{% block role %}{% endblock %}">
   <header><a class="brand" href="/">SEAT<span>VISION LAB</span></a>
-    <nav><a href="/">학생</a><a href="/admin">관리자</a><a href="/demo">시연 테스트</a><button id="install-app" class="install-button" hidden>앱 설치</button></nav>
+    {% set staff_screen = request.endpoint in ('admin', 'demo', 'student_directory') %}
+    <nav aria-label="주 메뉴">
+      {% if staff_screen %}
+        <a href="/admin">좌석 관리</a><a href="/admin/students">학생정보</a><a href="/demo">시연 테스트</a>
+      {% elif request.endpoint == 'student' %}
+        <span id="identity" hidden></span><a id="staff-home" href="/admin" hidden>좌석 관리</a>
+        <a id="nav-login" href="/login">로그인</a>
+      {% else %}
+        <a href="/">좌석배정 홈</a>
+      {% endif %}
+      {% if staff_screen or request.endpoint == 'student' %}
+        <button type="button" id="logout" {% if not staff_screen %}hidden{% endif %}>로그아웃</button>
+      {% endif %}
+      <button id="install-app" class="install-button" hidden>앱 설치</button>
+    </nav>
   </header>
   <main>
     {% block body %}

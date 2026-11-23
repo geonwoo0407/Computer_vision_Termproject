@@ -144,8 +144,8 @@ function drawDetail() {
   panel.append(actions);
   const action = (name, extra={}) => send({action:name, seat_id:s.id, ...extra});
   function owner(name) {
-    const id=prompt('예약할 학생의 로그인 아이디를 입력하세요.');
-    if(id?.trim()) action(name,{login_id:id.trim()});
+    const number = prompt('예약할 학생의 학번을 입력하세요.');
+    if (number?.trim()) action(name, {student_number:number.trim()});
   }
   if(role==='admin') {
     if(s.reserved) {
@@ -280,17 +280,6 @@ async function sync(version) {
   }
 }
 window.addEventListener('online',()=>restart());
-window.addEventListener('storage', event => {
-  if (event.key === 'seat-account-change') location.reload();
-});
-if (role === 'student') $('logout').onclick = async () => {
-  try {
-    const {response, data} = await api('/api/student/logout', {});
-    if (!response.ok) { $('message').textContent = data.error; return; }
-    localStorage.setItem('seat-account-change', String(Date.now()));
-    location.replace('/');
-  } catch { $('message').textContent = '로그아웃하지 못했습니다. 연결을 확인하세요.'; }
-};
 window.addEventListener('offline',()=>restart());
 window.addEventListener('pageshow',()=>{floor.scrollTo(0,0);restart();});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)restart();});

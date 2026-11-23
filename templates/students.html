@@ -1,0 +1,18 @@
+{% extends 'base.html' %}
+{% block role %}directory{% endblock %}
+{% block scripts %}{% endblock %}
+{% block title %}학생정보{% endblock %}
+{% block content %}
+<section class="panel directory">
+  <form method="post" action="/admin/students" role="search">
+    <label for="student-query">이름 또는 학번</label>
+    <div class="directory-search"><input id="student-query" type="search" name="q" value="{{ query }}" placeholder="이름 또는 전체 학번" autocomplete="off"><button>검색</button><a href="/admin/students">전체 보기</a></div>
+  </form>
+  {% if students %}
+    <table aria-label="가입한 학생"><thead><tr><th scope="col">이름</th><th scope="col">학번</th></tr></thead>
+    <tbody>{% for name, number in students %}<tr><td>{{ name }}</td><td>{{ number or '학번 미등록' }}</td></tr>{% endfor %}</tbody></table>
+  {% else %}
+    <p role="status">{{ '검색 결과가 없습니다.' if query else '가입한 학생이 없습니다.' }}</p>
+  {% endif %}
+</section>
+{% endblock %}

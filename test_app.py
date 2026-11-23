@@ -3,23 +3,26 @@ import re
 import tempfile, unittest, os
 from app import create_app
 
-def register(client, login_id, name='테스트 학생'):
-    response = client.post('/api/student/register', json=dict(login_id=login_id, name=name, password='seat-test123'))
+def register(client, number, name='테스트 학생'):
+    response = client.post('/api/student/register', json=dict(student_number=number, name=name, password='seat-test123'))
     assert response.status_code == 200, response.json
 
 def authenticate(app, client):
     app.config['STAFF_PASSWORD'] = 'test-only'
-    with client.get('/admin', auth=('admin','test-only')) as response:
+    with client.post('/api/login', json={'student_number':'admin', 'password':'test-only'}) as response:
         assert response.status_code == 200
 
 class SeatTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory(); self.app=create_app(os.path.join(self.tmp.name,'test.db')); self.c=self.app.test_client()
-        register(self.c, 'student1', '김하늘')
-        authenticate(self.app,self.c)
+        register(self.c, '00240001', '김하늘')
+        self.manager = self.app.test_client()
+        authenticate(self.app,self.manager)
     def tearDown(self): self.tmp.cleanup()
-    def action(self,action,**kw): return self.c.post('/api/action',json=dict(action=action,seat_id=1,**kw))
-    def seat(self): return self.c.get('/api/seats?view=admin').json['seats'][0]
+    def action(self,action,**kw):
+        client = self.manager if action in ('detect','grant','revoke','mode','reset','assign_owner') else self.c
+        return client.post('/api/action',json=dict(action=action,seat_id=1,**kw))
+    def seat(self): return self.manager.get('/api/seats?view=admin').json['seats'][0]
     def detect(self,p,b): return self.action('detect',source='demo',occupied=p,belongings=b)
     def test_unreserved_lifecycle(self):
         self.detect(True,True);self.assertTrue(self.seat()['warning'])
@@ -50,10 +53,10 @@ class SeatTests(unittest.TestCase):
         self.action('reserve');c2=create_app(self.app.config['DATABASE']).test_client()
         self.assertTrue(c2.get('/api/seats').json['seats'][0]['reserved'])
         for path in ('/','/admin','/demo','/static/app.js','/static/style.css'):
-            with self.c.get(path) as response: self.assertEqual(200,response.status_code)
+            with self.manager.get(path) as response: self.assertEqual(200,response.status_code)
     def test_floor_plan_numbers_match_the_reading_room(self):
         for path in ('/', '/admin', '/demo'):
-            page = self.c.get(path).get_data(as_text=True)
+            page = self.manager.get(path).get_data(as_text=True)
             ids = [int(value) for value in re.findall(r'data-seat-id="(\d+)"', page)]
             self.assertEqual(sorted(ids), list(range(1, 289)))
             self.assertEqual(ids[:14], [12, 13, 11, 14, 10, 15, 9, 16, 8, 17, 7, 18, 6, 19])
@@ -72,7 +75,7 @@ class SeatTests(unittest.TestCase):
     def test_return_owner_only_and_repeat(self):
         self.action('reserve')
         other=self.app.test_client()
-        register(other, 'other')
+        register(other, '00240002')
         self.assertFalse(other.get('/api/seats').json['seats'][0]['mine'])
         for act in ('return','cancel'):
             self.assertEqual(403,other.post('/api/action',json={'action':act,'seat_id':1}).status_code)
@@ -103,8 +106,8 @@ class SeatTests(unittest.TestCase):
             acts=[r[0] for r in c.execute('SELECT action FROM reservation_events ORDER BY id')]
         self.assertEqual(['reserve','cancel','reserve','return'],acts)
     def test_admin_assignment(self):
-        other=self.app.test_client();register(other,'other','이민서')
-        self.action('grant',login_id='other')
+        other=self.app.test_client();register(other,'00240002','이민서')
+        self.action('grant',student_number='00240002')
         self.assertEqual(self.seat()['owner_name'], '이민서')
         self.assertFalse(self.seat()['mine']);self.assertTrue(other.get('/api/seats').json['seats'][0]['mine'])
         self.assertEqual(200,other.post('/api/action',json={'action':'return','seat_id':1}).status_code)
@@ -114,11 +117,11 @@ class SeatTests(unittest.TestCase):
         with closing(sqlite3.connect(path)) as c, c:
             c.execute('CREATE TABLE seats (id INTEGER PRIMARY KEY,reserved INTEGER,occupied INTEGER,belongings INTEGER,used INTEGER,away_since REAL,updated REAL)')
             c.execute('INSERT INTO seats VALUES (1,1,0,1,1,1234.5,1235.5)')
-        legacy=create_app(path);client=legacy.test_client();register(client,'legacy');authenticate(legacy,client);s=client.get('/api/seats?view=admin').json['seats'][0]
+        legacy=create_app(path);client=legacy.test_client();register(client,'00240003');manager=legacy.test_client();authenticate(legacy,manager);s=manager.get('/api/seats?view=admin').json['seats'][0]
         self.assertTrue(s['reserved']);self.assertEqual(1234.5,s['away_since']);self.assertIsNone(s['owner_id'])
         self.assertEqual(403,client.post('/api/action',json={'action':'return','seat_id':1}).status_code)
         viewer=client.get('/api/seats').json['viewer_id']
-        self.assertEqual(200,client.post('/api/action',json={'action':'assign_owner','seat_id':1,'owner_id':viewer}).status_code)
+        self.assertEqual(200,manager.post('/api/action',json={'action':'assign_owner','seat_id':1,'owner_id':viewer}).status_code)
         self.assertEqual(1234.5,client.get('/api/seats').json['seats'][0]['away_since'])
         create_app(path) # migration is repeatable
     def test_identity_survives_restart(self):
@@ -133,7 +136,7 @@ class SeatTests(unittest.TestCase):
         reserve = {'action':'reserve','seat_id':1,'owner_id':'untrusted'}
         self.assertEqual(guest.post('/api/action',json=reserve).status_code,401)
         self.assertEqual(self.c.post('/api/action',json=reserve).status_code,200)
-        login = {'login_id':'student1','password':'seat-test123'}
+        login = {'student_number':'00240001','password':'seat-test123'}
         self.assertEqual(guest.post('/api/student/login',json={**login,'password':'wrong'}).status_code,401)
         self.assertEqual(guest.post('/api/student/register',json={**login,'name':'다른 이름'}).status_code,409)
         self.assertEqual(guest.post('/api/student/login',json=login).status_code,200)
@@ -150,7 +153,7 @@ class SeatTests(unittest.TestCase):
         self.detect(True,False)
         self.assertEqual(self.seat()['owner_name'],'김하늘')
         other = self.app.test_client()
-        register(other,'other','이민서')
+        register(other,'00240002','이민서')
         for client, query in [(self.c,''), (other,''), (other,'?view=admin')]:
             def redacted(seat):
                 self.assertNotIn('owner_name',seat)
@@ -165,7 +168,7 @@ class SeatTests(unittest.TestCase):
 
     def test_personal_ticket_favorites_and_stale_return(self):
         other = self.app.test_client()
-        register(other, 'other')
+        register(other, '00240002')
         first = self.action('reserve').json['my_reservation']
         self.assertGreater(first['created'], 0)
         self.assertEqual(first['seat_id'], 1)
@@ -183,9 +186,49 @@ class SeatTests(unittest.TestCase):
         self.assertEqual(self.c.get('/api/seats').json['my_reservation'], second)
         self.assertEqual(self.action('unfavorite').json['favorites'], [])
 
+    def test_unified_login_and_student_directory(self):
+        other = self.app.test_client()
+        register(other, '00240002', '김하늘')
+        guest = self.app.test_client()
+        for client in (guest, other):
+            for path in ('/admin', '/demo', '/admin/students'):
+                self.assertEqual(client.get(path).location, '/login')
+            self.assertEqual(client.post('/admin/students', data={'q':'김하늘'}).location, '/login')
+        self.assertEqual(guest.post('/api/login', json={'student_number':'admin','password':'wrong'}).status_code,401)
+        for invalid in ('abc', 'admin', '１２３'):
+            response = guest.post('/api/student/register', json={'student_number':invalid, 'name':'학생', 'password':'seat-test123'})
+            self.assertEqual(response.status_code, 400)
+        response = self.manager.post('/admin/students', data={'q':'김하늘'})
+        self.assertTrue(response.cache_control.no_store)
+        self.assertEqual(response.text.count('<td>김하늘</td>'), 2)
+        for query, expected in [('00240002', 1), ('0024', 0), ('하늘', 2)]:
+            response = self.manager.post('/admin/students', data={'q':query})
+            self.assertEqual(response.text.count('<td>김하늘</td>'), expected)
+        self.assertEqual(self.manager.post('/api/login', json={'student_number':'00240001','password':'seat-test123'}).json['role'], 'student')
+        self.assertEqual(self.manager.get('/admin/students').location, '/login')
+        self.assertEqual(other.post('/api/login', json={'student_number':'admin','password':'test-only'}).json['role'], 'admin')
+        self.assertIsNone(other.get('/api/seats').json['viewer_name'])
+        other.post('/api/student/logout', json={})
+        self.assertEqual(other.get('/admin/students').location, '/login')
+
+    def test_legacy_student_can_link_number_and_keep_reservation(self):
+        import sqlite3
+        self.action('reserve')
+        with closing(sqlite3.connect(self.app.config['DATABASE'])) as db, db:
+            db.execute("UPDATE students SET login_id='legacy-user' WHERE login_id='00240001'")
+        guest = self.app.test_client()
+        register(guest, '00240002')
+        payload = dict(legacy_id='legacy-user', student_number='00240002', password='seat-test123')
+        self.assertEqual(guest.post('/api/student/link-number', json=payload).status_code, 409)
+        payload['student_number'] = '00240009'
+        self.assertEqual(guest.post('/api/student/link-number', json={**payload, 'password':'wrong'}).status_code, 401)
+        self.assertEqual(guest.post('/api/student/link-number', json=payload).status_code, 200)
+        self.assertEqual(guest.get('/api/seats').json['my_reservation']['seat_id'], 1)
+        self.assertEqual(guest.post('/api/student/link-number', json=payload).status_code, 401)
+
     def test_account_changes_reject_stale_tab_action(self):
         before = self.c.get('/api/seats').json['viewer_id']
-        register(self.c,'other')
+        register(self.c,'00240002')
         response = self.c.post('/api/action',json={'action':'reserve','seat_id':1},headers={'X-Seat-Viewer':before})
         self.assertTrue(response.json['identity_changed'])
         self.assertFalse(self.seat()['reserved'])

@@ -1,6 +1,6 @@
 const form = document.getElementById('student-account');
 const destination = /^#(?:ticket|seat-\d{1,3})$/.test(location.hash) ? location.hash : '';
-form.querySelector('a').hash = destination;
+for (const link of form.querySelectorAll('a')) link.hash = destination;
 form.addEventListener('submit', async event => {
   event.preventDefault();
   const button = form.querySelector('button');
@@ -14,12 +14,12 @@ form.addEventListener('submit', async event => {
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(Object.fromEntries(new FormData(form)))
     });
+    const result = await response.json();
     if (!response.ok) {
-      const result = await response.json();
       throw new Error(result.error || '요청을 처리할 수 없습니다.');
     }
     localStorage.setItem('seat-account-change', String(Date.now()));
-    location.replace('/' + destination);
+    location.replace(result.role === 'admin' ? '/admin' : '/' + destination);
   } catch (reason) {
     error.textContent = reason instanceof TypeError ? '서버에 연결할 수 없습니다.' : reason.message;
     error.hidden = false;

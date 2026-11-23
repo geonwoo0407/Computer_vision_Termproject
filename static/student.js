@@ -99,9 +99,12 @@ function updateStudentDialog() {
   go.onclick = confirmAction;
 }
 function drawStudent() {
-  $('identity').textContent = state.viewer_name ? state.viewer_name + '님' : '학생 계정';
-  $('guest-links').hidden = Boolean(state.viewer_name);
-  $('logout').hidden = !state.viewer_name;
+  const signedIn = Boolean(state.viewer_name || state.is_staff);
+  $('identity').textContent = state.viewer_name ? state.viewer_name + '님' : '';
+  $('identity').hidden = !state.viewer_name;
+  $('staff-home').hidden = !state.is_staff;
+  $('nav-login').hidden = signedIn;
+  $('logout').hidden = !signedIn;
   if (studentPage === 'rooms') {
     const count = state.seats.filter(s => s.color === 'empty').length;
     $('available-count').textContent = count;
