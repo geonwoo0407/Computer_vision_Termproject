@@ -22,11 +22,11 @@ PC를 끈 상태에서도 Render가 제공한 HTTPS 주소로 휴대폰에서 �
 1. 위 **Deploy to Render** 버튼을 누르거나 Render Dashboard에서
    **New > Blueprint**를 선택하고 `Computer_vision_Termproject` 저장소를 연결합니다.
    `.gitignore`에 의해 가상환경, 로컬 SQLite DB, 세션 비밀키는 업로드되지 않습니다.
-3. Blueprint가 `render.yaml`을 읽으면 `SEAT_ADMIN_PASSWORD`에 관리자 화면에서
+2. Blueprint가 `render.yaml`을 읽으면 `SEAT_ADMIN_PASSWORD`에 관리자 화면에서
    사용할 새 비밀번호를 입력합니다. 이 값은 코드나 GitHub에 적지 않습니다.
-4. 배포가 끝나면 표시되는 `https://...onrender.com` 주소를 휴대폰에서 엽니다.
+3. 배포가 끝나면 표시되는 `https://...onrender.com` 주소를 휴대폰에서 엽니다.
    학생 화면은 `/`, 관리자 화면은 `/admin`, 시연 화면은 `/demo`입니다.
-5. `/admin`과 `/demo`의 사용자 이름은 `admin`, 비밀번호는 3단계에서 입력한
+4. `/admin`과 `/demo`의 사용자 이름은 `admin`, 비밀번호는 2단계에서 입력한
    `SEAT_ADMIN_PASSWORD`입니다.
 
 Render 무료 Web Service는 시험용입니다. 일정 시간 요청이 없으면 정지되어 첫 접속이
