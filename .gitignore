@@ -1,0 +1,10 @@
+.venv/
+.venv-linux/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.env
+instance/*.db
+instance/*.db-*
+instance/*.secret
+*.zip
