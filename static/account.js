@@ -1,4 +1,6 @@
 const form = document.getElementById('student-account');
+const destination = /^#(?:ticket|seat-\d{1,3})$/.test(location.hash) ? location.hash : '';
+form.querySelector('a').hash = destination;
 form.addEventListener('submit', async event => {
   event.preventDefault();
   const button = form.querySelector('button');
@@ -17,7 +19,7 @@ form.addEventListener('submit', async event => {
       throw new Error(result.error || '요청을 처리할 수 없습니다.');
     }
     localStorage.setItem('seat-account-change', String(Date.now()));
-    location.replace('/');
+    location.replace('/' + destination);
   } catch (reason) {
     error.textContent = reason instanceof TypeError ? '서버에 연결할 수 없습니다.' : reason.message;
     error.hidden = false;

@@ -43,6 +43,8 @@ def create_app(database=None):
         c.execute("""CREATE TABLE IF NOT EXISTS students (
             id TEXT PRIMARY KEY, login_id TEXT UNIQUE COLLATE NOCASE NOT NULL,
             name TEXT NOT NULL, password_hash TEXT NOT NULL)""")
+        c.execute("""CREATE TABLE IF NOT EXISTS favorites (
+            student_id TEXT NOT NULL, seat_id INTEGER NOT NULL, PRIMARY KEY(student_id,seat_id))""")
         c.execute('CREATE TABLE IF NOT EXISTS reservation_events (id INTEGER PRIMARY KEY, seat_id INTEGER, action TEXT, actor TEXT, owner_id TEXT, created REAL)')
         c.execute('CREATE TABLE IF NOT EXISTS changes (id INTEGER PRIMARY KEY, revision INTEGER NOT NULL)')
         c.execute('INSERT OR IGNORE INTO changes VALUES (1, 0)')
@@ -162,7 +164,12 @@ def create_app(database=None):
                 s.pop('owner_id')
                 s.pop('belongings_owner_id')
             seats.append(s)
+        ticket = c.execute("""SELECT id,seat_id,created FROM reservations
+                              WHERE owner_id=? AND status='active'""", (viewer,)).fetchone() if viewer_name else None
+        favorites = [r[0] for r in c.execute('SELECT seat_id FROM favorites WHERE student_id=? ORDER BY seat_id',
+                                              (viewer,))] if viewer_name else []
         return dict(revision=c.execute('SELECT revision FROM changes').fetchone()[0], viewer_id=viewer,
+                    my_reservation=dict(ticket) if ticket else None, favorites=favorites,
                     viewer_name=viewer_name, seats=seats, mode=c.execute('SELECT mode FROM settings').fetchone()[0], server_time=now)
 
     @app.after_request
@@ -222,7 +229,7 @@ def create_app(database=None):
         data = request.get_json(silent=True)
         if not isinstance(data, dict): return jsonify(error='JSON 객체가 필요합니다.'),400
         act = data.get('action')
-        if act in ('reserve','move','cancel','return') and g.student is None:
+        if act in ('reserve','move','cancel','return','favorite','unfavorite') and g.student is None:
             return jsonify(error='학생 로그인 후 이용하세요.'), 401
         with closing(connect()) as c, c:
             c.execute('BEGIN IMMEDIATE')
@@ -283,6 +290,18 @@ def create_app(database=None):
             row = c.execute('SELECT * FROM seats WHERE id=?',(data['seat_id'],)).fetchone()
             if row is None: return jsonify(error='존재하지 않는 좌석'),404
             s = dict(row)
+            if act in ('favorite', 'unfavorite'):
+                if act == 'favorite':
+                    c.execute('INSERT OR IGNORE INTO favorites VALUES (?,?)', (g.viewer, s['id']))
+                else:
+                    c.execute('DELETE FROM favorites WHERE student_id=? AND seat_id=?', (g.viewer, s['id']))
+                c.execute('UPDATE changes SET revision=revision+1 WHERE id=1')
+                return
+            if act in ('return', 'cancel', 'move') and 'reservation_id' in data:
+                current = c.execute("SELECT id FROM reservations WHERE seat_id=? AND owner_id=? AND status='active'",
+                                    (s['id'], g.viewer)).fetchone()
+                if not current or current['id'] != data['reservation_id']:
+                    return jsonify(error='배정 정보가 변경되었습니다. 배정표를 다시 확인하세요.'),409
             previous_owner = s['owner_id']
             if act in ('reserve','grant','assign_owner'):
                 if act == 'reserve' and not available(s):

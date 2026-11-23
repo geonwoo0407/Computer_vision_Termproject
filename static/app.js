@@ -1,6 +1,6 @@
 const $ = id => document.getElementById(id);
 const role = document.body.dataset.role;
-let state, selected = 1, moving = null, pending = false, offset = 0, live;
+let state, selected = role === 'student' ? null : 1, pending = false, offset = 0, live;
 const floor = $('seats');
 const desks = new Map(Array.from(floor.querySelectorAll('[data-seat-id]'),
   button => [Number(button.dataset.seatId), button]));
@@ -35,6 +35,7 @@ floor.addEventListener('click', event => {
   if (!desk || desk.disabled) return;
   selected = Number(desk.dataset.seatId);
   draw();
+  if (role === 'student') { showStudentDialog('seat'); return; }
   $('detail').scrollIntoView({behavior:'smooth',block:'nearest'});
 });
 
@@ -142,28 +143,6 @@ function drawDetail() {
   const actions = element('div','','actions');
   panel.append(actions);
   const action = (name, extra={}) => send({action:name, seat_id:s.id, ...extra});
-  if (role === 'student') {
-    if (!state.viewer_name) {
-      if (s.color === 'empty') {
-        const link = element('a', '로그인하고 예약하기');
-        link.href = '/login';
-        actions.append(link);
-      }
-    } else if (moving !== null) {
-      panel.prepend(element('p', moving + '번에서 이동할 빈 좌석을 배치도에서 선택하세요.'));
-      if (s.color === 'empty')
-        control(actions, selected+'번으로 이동', () => action('move',{seat_id:moving,target_id:s.id}));
-      control(actions, '이동 취소', () => { selected=moving; moving=null; draw(); });
-    } else if (s.mine) {
-      if (!s.used) control(actions,'예약 취소',()=>action('cancel'));
-      control(actions,'반납하기',()=>{if(confirm(s.id+'번 좌석을 반납할까요?')) action('return');});
-      control(actions,'자리 이동',()=>{moving=s.id; draw(); $('seats').scrollIntoView({block:'center'});});
-    } else if (s.color === 'empty') {
-      const mine = state.seats.find(item=>item.mine);
-      if (mine) control(actions,'이 자리로 이동',()=>action('move',{seat_id:mine.id,target_id:s.id}));
-      else control(actions,'예약하기',()=>action('reserve'));
-    }
-  }
   function owner(name) {
     const id=prompt('예약할 학생의 로그인 아이디를 입력하세요.');
     if(id?.trim()) action(name,{login_id:id.trim()});
@@ -186,17 +165,11 @@ function drawDetail() {
   if(role!=='student' && s.warning) panel.append(element('p','미예약 이용 또는 소지품 확인 필요','warning'));
 }
 function draw() {
-  if(moving!==null && !state.seats.some(s=>s.id===moving && s.mine)) moving=null;
-  if (role === 'student') {
-    $('identity').textContent = state.viewer_name ? '내 이용자 ID · ' + state.viewer_name : '학생 계정';
-    $('guest-links').hidden = Boolean(state.viewer_name);
-    $('logout').hidden = !state.viewer_name;
-  }
+  if (role === 'student') { drawStudent(); return; }
   $('mode').textContent = state.mode==='demo'?'시연 모드':'카메라 API 모드';
   const available = state.seats.filter(s=>s.color==='empty').length;
   const counts = [['전체 좌석',state.seats.length],['예약 가능',available]];
-  if (role === 'student') counts.push(['이용 중',state.seats.length - available]);
-  else counts.push(['자리 비움',state.seats.filter(s=>s.away).length],['미예약 경고',state.seats.filter(s=>s.warning).length]);
+  counts.push(['자리 비움',state.seats.filter(s=>s.away).length],['미예약 경고',state.seats.filter(s=>s.warning).length]);
   $('summary').replaceChildren(...counts.map(([label,n])=>{
     const box=element('div',''); box.append(element('span',label),element('strong',n+'석')); return box;
   }));
@@ -217,6 +190,7 @@ const prefix = 'seat-request:';
 function status(ok, message) {
   connected = ok;
   $('connection').textContent = message;
+  $('connection').dataset.online = String(ok);
   if (state) draw();
 }
 async function api(path, body) {
@@ -240,14 +214,14 @@ async function send(body) {
   const key=prefix+state.viewer_id+':'+token;
   $('message').textContent='요청 처리 중…';
   try {
-    localStorage.setItem(key, token);
+    localStorage.setItem(key, body.action);
     const {response,data}=await api('/api/action',{...body,request_id:token});
     localStorage.removeItem(key);
     if(response.ok) {
-      if(body.action==='move'){selected=body.target_id;moving=null;}
       receive(data);
     }
-    $('message').textContent=response.ok?'변경이 반영되었습니다.':data.error;
+    if (role === 'student') studentActionResult(body.action, response.ok ? null : data.error);
+    $('message').textContent=response.ok && role === 'student' ? '' : response.ok?'변경이 반영되었습니다.':data.error;
   } catch {
     $('message').textContent='요청 결과 확인 중 · 연결 복구 후 서버에서 확인합니다.';
     restart();
@@ -268,11 +242,13 @@ async function sync(version) {
     receive(data);
     for(const key of Object.keys(localStorage).filter(k=>k.startsWith(prefix+data.viewer_id+':'))) {
       if(pending) break;
-      const result=await api('/api/result',{request_id:localStorage.getItem(key)});
+      const savedAction = localStorage.getItem(key);
+      const result=await api('/api/result',{request_id:key.slice(key.lastIndexOf(':')+1)});
       if(version!==generation) return;
       if(!result.response.ok) throw Error();
       receive(result.data.state);
       $('message').textContent=result.data.error || '서버에서 변경 완료를 확인했습니다.';
+      if (role === 'student') studentActionResult(savedAction, result.data.error);
       localStorage.removeItem(key);
     }
     if(!window.EventSource) {
@@ -318,5 +294,6 @@ if (role === 'student') $('logout').onclick = async () => {
 window.addEventListener('offline',()=>restart());
 window.addEventListener('pageshow',()=>{floor.scrollTo(0,0);restart();});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)restart();});
-setInterval(tick,1000);
+if (role === 'student') initStudent();
+else setInterval(tick,1000);
 restart();

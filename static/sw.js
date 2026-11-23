@@ -1,5 +1,5 @@
-const VERSION = 'seat-shell-v6';
-const SHELL = ['/', '/static/style.css', '/static/app.js', '/static/pwa.js', '/static/icons/seat-192.png', '/static/icons/seat-512.png', '/static/icons/seat-maskable-512.png'];
+const VERSION = 'seat-shell-v7';
+const SHELL = ['/', '/static/style.css', '/static/app.js', '/static/student.js', '/static/student.css', '/static/icons/seoultech-emblem.gif', '/static/pwa.js', '/static/icons/seat-192.png', '/static/icons/seat-512.png', '/static/icons/seat-maskable-512.png'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(VERSION).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting()));
 });

@@ -1,0 +1,49 @@
+body[data-role=student] {background:white; color:#243244}
+body[data-role=student] header {padding-block:12px}
+body[data-role=student] main {max-width:900px; padding:0 0 20px}
+.student-title {position:relative; background:#10265c; color:white; text-align:center}
+.student-title h1 {font-size:clamp(18px,3vw,24px); font-weight:650; margin:0; padding:18px 48px; letter-spacing:-.03em}
+.student-title a {position:absolute; inset:0 auto 0 0; width:52px; display:grid; place-items:center; color:white; text-decoration:none; font-size:27px}
+.screen {padding:clamp(12px,2.5vw,24px)}
+.screen[hidden], [hidden] {display:none!important}
+.emblem {display:block; width:clamp(140px,38vw,202px); height:auto; margin:14px auto 24px}
+#home, #ticket {max-width:670px; margin:auto}
+.info-line {display:flex; align-items:center; gap:13px; padding:16px; border:1px solid #d7dce2; border-radius:4px; line-height:1.5; margin:0 0 12px}
+.info-line b {display:grid; place-items:center; flex:none; border-radius:50%; width:1.5em; height:1.5em; background:#465265; color:white; font-family:serif}
+.menu-button, .dialog-actions button {text-align:center; border-radius:4px; text-decoration:none; font-weight:650; padding:14px; font-size:16px}
+.menu-button {display:block; margin-bottom:10px}
+.primary,.primary:hover,.menu-button.primary {background:#007fad; border-color:#007fad; color:white}
+.ticket-link {background:#626d79; color:white}
+.account-bar {margin-top:20px; justify-content:center; font-size:14px}
+#rooms {padding:0}
+.room-tab {border-bottom:2px solid #2696ce; width:max-content; padding:14px 32px; font-weight:700; color:#197bad}
+.room-list {background:#f4f6f8; padding:24px}
+.room-choice {display:inline-flex; flex-direction:column; align-items:center; gap:8px; text-decoration:none; color:inherit}
+#availability-ring {display:grid; place-items:center; background:conic-gradient(#279bdd var(--available,0%),#dce4e9 0); border-radius:50%; width:100px; aspect-ratio:1}
+#availability-ring > span {width:75%; height:75%; border-radius:50%; background:white; display:grid; place-content:center; text-align:center}
+#available-count {font-size:26px; color:#1378b2}
+#availability-ring small, .room-caption {color:#526374; font-size:13px}
+.favorites-heading {font-size:17px; margin:24px 16px 10px}
+#favorite-list {margin:0 16px; flex-wrap:wrap}
+#favorite-list a,.secondary-actions a {color:#245780}
+#map {padding:0 8px 8px}
+.map-legend {display:flex; justify-content:center; gap:28px; padding:14px; font-size:14px}
+#map .floor {border-radius:4px; max-height:76svh; background:white}
+.ticket-rows {margin:0; border:1px solid #d7dce2; border-radius:4px}
+.ticket-rows div {display:grid; grid-template-columns:minmax(70px,30%) 1fr; gap:14px; padding:17px 12px}
+.ticket-rows div+div {border-top:1px solid #d7dce2}
+.ticket-rows dt {text-align:right; color:#526374}
+.ticket-rows dd {margin:0; font-variant-numeric:tabular-nums}
+.ticket-actions,.secondary-actions {display:flex; justify-content:center; align-items:center; gap:10px; margin-top:14px}
+.secondary-actions a,.secondary-actions button {background:none; border:0; text-decoration:underline; padding:4px; font:inherit; font-size:13px}
+body[data-role=student] #connection,body[data-role=student] #message {margin:8px 16px; text-align:center; font-size:13px}
+#connection[data-online=true] {display:none}
+#seat-dialog {padding:0; border:0; width:min(88vw,410px); color:#192634; box-shadow:0 12px 40px #1114}
+#seat-dialog::backdrop {background:#10172170}
+#seat-dialog h2 {text-align:center; padding:15px; border-bottom:1px solid #ddd; font-size:19px}
+.dialog-content {padding:0 16px; line-height:1.55}
+#dialog-seat {text-align:center; font-weight:650}
+#dialog-status {color:#315d75; font-size:14px}
+#dialog-status:empty,#dialog-seat:empty {display:none}
+.dialog-actions {display:flex; gap:7px; padding:12px}
+.dialog-actions button {flex:1}

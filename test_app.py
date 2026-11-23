@@ -163,6 +163,26 @@ class SeatTests(unittest.TestCase):
             redacted(client.post('/api/result'+query,json={'request_id':'missing'}).json['state']['seats'][0])
         self.assertEqual(other.post('/api/action',json={'action':'cancel','seat_id':1}).status_code,403)
 
+    def test_personal_ticket_favorites_and_stale_return(self):
+        other = self.app.test_client()
+        register(other, 'other')
+        first = self.action('reserve').json['my_reservation']
+        self.assertGreater(first['created'], 0)
+        self.assertEqual(first['seat_id'], 1)
+        self.assertEqual(self.action('favorite').json['favorites'], [1])
+        other_state = other.get('/api/seats').json
+        self.assertIsNone(other_state['my_reservation'])
+        self.assertEqual(other_state['favorites'], [])
+        moved = self.action('move', reservation_id=first['id'], target_id=138).json['my_reservation']
+        self.assertEqual(moved, {**first, 'seat_id':138})
+        self.assertIsNone(self.c.post('/api/action', json={'action':'return','seat_id':138,
+                          'reservation_id':first['id']}).json['my_reservation'])
+        second = self.action('reserve').json['my_reservation']
+        self.assertNotEqual(second['id'], first['id'])
+        self.assertEqual(self.action('return', reservation_id=first['id']).status_code, 409)
+        self.assertEqual(self.c.get('/api/seats').json['my_reservation'], second)
+        self.assertEqual(self.action('unfavorite').json['favorites'], [])
+
     def test_account_changes_reject_stale_tab_action(self):
         before = self.c.get('/api/seats').json['viewer_id']
         register(self.c,'other')

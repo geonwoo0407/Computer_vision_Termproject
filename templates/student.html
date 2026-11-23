@@ -1,12 +1,56 @@
 {% extends 'base.html' %}
 {% block role %}student{% endblock %}
-{% block title %}열람실 좌석 예약{% endblock %}
-{% block intro %}책상을 눌러 좌석을 선택하세요.{% endblock %}
-{% block account %}
-<div class="account-bar">
-  <span id="identity"></span>
-  <span id="guest-links" hidden><a href="/login">로그인</a> · <a href="/register">회원가입</a></span>
-  <button id="logout" type="button" hidden>로그아웃</button>
-</div>
+{% block scripts %}
+<link rel="stylesheet" href="/static/student.css">
+<script defer src="/static/student.js"></script>
+<script defer src="/static/app.js"></script>
 {% endblock %}
-{% block legend %}<span class="blue">● 예약 가능</span><span class="red">● 이용 중</span>{% endblock %}
+{% block body %}
+<div class="student-title">
+  <a id="back" href="#home" aria-label="홈으로">⌂</a>
+  <h1 id="page-title" tabindex="-1">열람실 좌석배정</h1>
+</div>
+<section id="home" class="screen">
+  <img class="emblem" src="/static/icons/seoultech-emblem.gif" alt="서울과학기술대학교">
+  <p class="info-line"><b aria-hidden="true">i</b> 열람실 좌석배정 시스템입니다.</p>
+  <a class="menu-button primary" href="#rooms">좌석배정</a>
+  <a class="menu-button ticket-link" href="#ticket">좌석배정표</a>
+  <div class="account-bar">
+    <span id="identity"></span>
+    <span id="guest-links" hidden><a href="/login">로그인</a> · <a href="/register">회원가입</a></span>
+    <button id="logout" type="button" hidden>로그아웃</button>
+  </div>
+</section>
+<section id="rooms" class="screen" hidden>
+  <div class="room-tab">열람실</div>
+  <div class="room-list"><a href="#map" class="room-choice">
+    <strong>2F 일반열람실2</strong>
+    <span id="availability-ring"><span><b id="available-count">…</b><small>/ {{ seat_count }}석</small></span></span>
+    <span class="room-caption">예약 가능 좌석</span>
+  </a></div>
+  <h2 class="favorites-heading">나의 선호좌석</h2><div id="favorite-list" class="info-line">조회 중…</div>
+</section>
+<section id="map" class="screen" hidden>
+  <div class="map-legend"><span class="blue">● 예약 가능</span><span class="red">● 이용 중</span></div>
+  {% include 'map.html' %}
+</section>
+<section id="ticket" class="screen" hidden>
+  <p id="ticket-empty" class="info-line">배정 정보를 조회하고 있습니다.</p>
+  <div id="ticket-info" hidden>
+    <p class="info-line"><b aria-hidden="true">i</b> 퇴실 시 좌석을 반납해 주세요.</p>
+    <dl class="ticket-rows">
+      <div><dt>좌석정보</dt><dd id="ticket-seat"></dd></div>
+      <div><dt>이용상태</dt><dd><strong>배정</strong></dd></div>
+      <div><dt>배정시간</dt><dd id="ticket-time"></dd></div>
+    </dl>
+    <div class="ticket-actions"><button id="return-seat">반납</button><button id="favorite-seat">☆ 선호좌석</button></div>
+    <div class="secondary-actions"><a href="#map">자리 이동</a><button id="cancel-reservation">예약 취소</button></div>
+  </div>
+</section>
+<div id="connection" role="status">서버 연결 중…</div><div id="message" role="status"></div>
+<dialog id="seat-dialog" aria-labelledby="dialog-title">
+  <h2 id="dialog-title"></h2>
+  <div class="dialog-content"><p id="dialog-prompt"></p><p id="dialog-seat"></p><p id="dialog-status" role="status"></p></div>
+  <div class="dialog-actions"><button id="dialog-back" type="button">취소</button><button id="dialog-go" class="primary" type="button"></button></div>
+</dialog>
+{% endblock %}

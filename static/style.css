@@ -52,3 +52,9 @@
 .account-form p {margin:0; color:#913644}
 .desk .owner-name {max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 body[data-role=student] .summary {grid-template-columns:repeat(3,minmax(0,1fr))}
+
+.seat-banks {position:relative; padding-bottom:3em}
+.entrance {position:absolute; bottom:0; left:50%; transform:translateX(-50%); text-align:center; color:#405a70; font-weight:700; pointer-events:none}
+.entrance::before, .entrance::after {content:''; display:inline-block; width:1em; height:.85em; border:1px solid #8093a5; background:#e0e8ed; border-radius:0 100% 0 0}
+.entrance::after {transform:scaleX(-1)}
+.entrance span {position:absolute; bottom:1.7em; left:50%; transform:translateX(-50%); white-space:nowrap; font-size:.8em}
