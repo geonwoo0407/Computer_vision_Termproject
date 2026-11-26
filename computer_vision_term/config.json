@@ -1,0 +1,30 @@
+{
+  "input_type": "realsense",
+  "source": "0",
+  "realsense_serial": "948522070995",
+  "camera_id": "camera_1",
+  "realsense_width": 640,
+  "realsense_height": 480,
+  "realsense_fps": 30,
+  "checkerboard": {
+    "inner_corners": [9, 6],
+    "square_mm": null,
+    "target_pairs": 20
+  },
+  "seat_roi_file": null,
+  "seat_min_overlap": 0.05,
+  "model": "yolo11n.pt",
+  "confidence": 0.35,
+  "image_size": 640,
+  "device": "cpu",
+  "target_classes": [
+    "person",
+    "chair",
+    "backpack",
+    "handbag",
+    "suitcase",
+    "laptop",
+    "cell phone",
+    "book"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "image_size": {
+    "width": 640,
+    "height": 480
+  },
+  "calibrated": false,
+  "seats": [
+    {"seat_id": "1", "rectangle": [20, 60, 115, 220]},
+    {"seat_id": "2", "rectangle": [120, 60, 215, 220]},
+    {"seat_id": "3", "rectangle": [220, 60, 315, 220]},
+    {"seat_id": "4", "rectangle": [325, 60, 420, 220]},
+    {"seat_id": "5", "rectangle": [425, 60, 520, 220]},
+    {"seat_id": "6", "rectangle": [525, 60, 620, 220]},
+    {"seat_id": "7", "rectangle": [20, 260, 115, 440]},
+    {"seat_id": "8", "rectangle": [120, 260, 215, 440]},
+    {"seat_id": "9", "rectangle": [220, 260, 315, 440]},
+    {"seat_id": "10", "rectangle": [325, 260, 420, 440]},
+    {"seat_id": "11", "rectangle": [425, 260, 520, 440]},
+    {"seat_id": "12", "rectangle": [525, 260, 620, 440]}
+  ]
+}

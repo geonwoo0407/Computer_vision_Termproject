@@ -1,0 +1,8 @@
+numpy>=1.24
+opencv-python>=4.8
+ultralytics>=8.3,<9
+matplotlib>=3.6
+
+# Used from stage 2 onward. Remove this line temporarily if installing on a
+# machine without a compatible RealSense wheel; RGB video testing does not use it.
+pyrealsense2>=2.54
