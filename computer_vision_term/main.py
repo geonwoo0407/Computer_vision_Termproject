@@ -20,6 +20,7 @@ from camera import (
     list_realsense_devices,
 )
 from detector import DetectorDependencyError, VisionDetector
+from run_log import open_run_log
 from seat_roi import SeatROIManager
 from stereo_geometry import load_calibration
 
@@ -59,6 +60,17 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Detect the COCO chair class in full RGB frames",
     )
+    modes.add_argument("--single-seat", action="store_true",
+                       help="Observe one fixed seat using YOLO, an empty RGB reference and timed votes")
+    modes.add_argument("--six-seats", action="store_true",
+                       help="Observe two rows of three seats in a single fixed RGB view")
+    parser.add_argument("--grid-layout", type=Path, help="Six-seat ROI file (default: output/seat_grid_3x2.json)")
+    parser.add_argument("--app-url", help="SeatSense base URL for confirmed six-seat observations")
+    parser.add_argument("--app-seats", nargs=6, type=int, metavar="SEAT",
+                        help="Six app seat numbers in camera slot order (far row first, then near row)")
+    parser.add_argument("--desk-roi", nargs=4, type=int, metavar=("X", "Y", "W", "H"))
+    parser.add_argument("--chair-roi", nargs=4, type=int, metavar=("X", "Y", "W", "H"))
+    parser.add_argument("--confirm-seconds", type=float, help="Seat vote window (default 5s, minimum 5s)")
     parser.add_argument(
         "--input-type",
         choices=("video", "realsense"),
@@ -87,7 +99,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--jsonl",
-        help="Optional path for one JSON detection result per frame",
+        help="Set the frame log path (default: a new file under output/logs/)",
     )
     parser.add_argument(
         "--no-display",
@@ -145,6 +157,7 @@ def run_camera_diagnostics(
     min_depth_m: float,
     max_depth_m: float,
     warmup_frames: int,
+    log=None,
 ) -> int:
     states: dict[str, dict[str, Any]] = {}
     sources = source.sources if isinstance(source, MultiRealSenseSource) else [source]
@@ -183,6 +196,13 @@ def run_camera_diagnostics(
             )
             valid_ratio = float(np.count_nonzero(valid) / valid.size)
             state["valid_ratios"].append(valid_ratio)
+        if log is not None:
+            print(json.dumps({"mode": "camera_only", "camera_id": packet.camera_id,
+                              "serial_number": packet.serial_number, "frame_id": packet.frame_index,
+                              "timestamp": packet.timestamp, "color_timestamp_ms": packet.color_timestamp_ms,
+                              "depth_timestamp_ms": packet.depth_timestamp_ms,
+                              "valid_depth_ratio": valid_ratio if packet.depth_m is not None else None}),
+                  file=log, flush=True)
 
         if (
             packet.color_timestamp_ms is not None
@@ -268,9 +288,32 @@ def run(args: argparse.Namespace) -> int:
         return print_realsense_devices()
 
     config = load_config(args.config)
+    seat_mode = args.single_seat or args.six_seats
+    if (args.app_url or args.app_seats) and not (args.six_seats and args.app_url):
+        raise ValueError("--app-seats and --app-url require --six-seats with an app URL.")
+    if seat_mode:
+        if args.serials or args.stereo or args.seat_rois:
+            raise ValueError("Seat preview takes one RGB source and its own desk/chair ROIs.")
+        if args.confirm_seconds is not None and not (np.isfinite(args.confirm_seconds) and args.confirm_seconds >= 5):
+            raise ValueError("--confirm-seconds must be finite and at least 5.")
+    elif args.confirm_seconds is not None:
+        raise ValueError("--confirm-seconds requires --single-seat or --six-seats.")
+    if args.single_seat:
+        from single_seat import draw_status, prepare_single_seat
+        if bool(args.desk_roi) != bool(args.chair_roi) or (args.no_display and not args.desk_roi):
+            raise ValueError("Provide both --desk-roi and --chair-roi for preset or headless operation.")
+    elif args.desk_roi or args.chair_roi:
+        raise ValueError("--desk-roi and --chair-roi require --single-seat.")
+    if args.six_seats:
+        from seat_grid import DEFAULT_LAYOUT, draw_grid, prepare_grid
+        layout = args.grid_layout or DEFAULT_LAYOUT
+        if args.jsonl and layout.resolve() == Path(args.jsonl).resolve():
+            raise ValueError("--jsonl and --grid-layout must be different files.")
+    elif args.grid_layout:
+        raise ValueError("--grid-layout requires --six-seats.")
     input_type = args.input_type or config.get("input_type", "video")
     source = parse_source(args.source or str(config.get("source", "0")))
-    serial = args.serial or config.get("realsense_serial")
+    serial = args.serial or (None if seat_mode else config.get("realsense_serial"))
     camera_id = args.camera_id or config.get("camera_id")
     stereo = load_calibration(args.stereo) if args.stereo else None
     if stereo and (input_type != "realsense" or args.chair_only or args.camera_only):
@@ -304,7 +347,7 @@ def run(args: argparse.Namespace) -> int:
                 width=width,
                 height=height,
                 fps=fps,
-                include_depth=not args.chair_only,
+                include_depth=not (args.chair_only or seat_mode),
             )
             input_label = f"RealSense serial={serial or 'auto'}"
     else:
@@ -317,15 +360,11 @@ def run(args: argparse.Namespace) -> int:
             seat_roi_path,
             min_overlap=float(config.get("seat_min_overlap", 0.05)),
         )
-        if seat_roi_path
+        if seat_roi_path and not seat_mode
         else None
     )
 
     output_file = None
-    if args.jsonl:
-        output_path = Path(args.jsonl)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        output_file = output_path.open("w", encoding="utf-8")
 
     processed_frames = 0
     smoothed_pipeline_fps = 0.0
@@ -333,8 +372,19 @@ def run(args: argparse.Namespace) -> int:
     previous_camera_times: dict[str, float] = {}
     smoothed_camera_fps: dict[str, float] = {}
     window_indices: dict[str, int] = {}
+    publisher = None
     try:
+        if args.app_url:
+            from seat_app import GridPublisher, SeatApp
+            app_seats = args.app_seats or config.get("six_seat_app_ids", [])
+            publisher = GridPublisher(SeatApp(args.app_url), app_seats)
+            print(f"SeatSense {args.app_url}: camera slots 1..6 -> {app_seats}", flush=True)
+        elif args.six_seats:
+            print("SeatSense app offline: preview only. To sync, set --app-url.", flush=True)
         with input_source as video:
+            mode = next((name for name in ("six_seats", "single_seat", "chair_only", "camera_only")
+                         if getattr(args, name)), "detections")
+            output_file = open_run_log(mode, args.jsonl)
             print(
                 f"Input opened: {input_label}, size={video.frame_size}, "
                 f"reported_fps={video.fps:.2f}"
@@ -348,8 +398,14 @@ def run(args: argparse.Namespace) -> int:
                     float(depth_config.get("min_depth_m", 0.1)),
                     float(depth_config.get("max_depth_m", 10.0)),
                     args.warmup_frames,
+                    log=output_file,
                 )
 
+            classes = config.get("target_classes")
+            if args.chair_only:
+                classes = ["chair"]
+            if seat_mode:
+                classes = None
             detector = VisionDetector(
                 model_path=args.model or config.get("model", "yolo11n.pt"),
                 confidence=(
@@ -359,30 +415,34 @@ def run(args: argparse.Namespace) -> int:
                 ),
                 image_size=args.image_size or int(config.get("image_size", 640)),
                 device=args.device or config.get("device", "cpu"),
-                target_classes=["chair"] if args.chair_only else config.get("target_classes"),
+                target_classes=classes,
             )
             if isinstance(video, MultiRealSenseSource):
                 video.reset_drop_counts()
             checked_profiles = set()
-            for packet in video.frames():
+            packets = iter(video.frames())
+            seat = None
+            if args.single_seat:
+                seat = prepare_single_seat(packets, detector, args.desk_roi, args.chair_roi,
+                                           args.no_display, args.confirm_seconds or 5.0)
+                seat_key, draw_seats = "single_seat", draw_status
+            elif args.six_seats:
+                seat = prepare_grid(packets, detector, layout, args.no_display, args.confirm_seconds or 5.0)
+                seat_key, draw_seats = "seat_grid", draw_grid
+            if seat_mode and seat is None:
+                return 0
+            for packet in packets:
+                captured = packet.received_monotonic if packet.received_monotonic is not None else time.monotonic()
                 if stereo and packet.serial_number not in checked_profiles:
                     stereo.check_profile(packet.serial_number, packet.intrinsics, video.fps)
                     checked_profiles.add(packet.serial_number)
-                result = detector.process_frame(
-                    packet.frame,
-                    packet.camera_id,
-                    packet.timestamp,
-                    packet.depth_m,
-                    packet.intrinsics,
-                    native_intrinsics=packet.native_intrinsics,
-                    serial_number=packet.serial_number,
-                    frame_id=packet.frame_index,
-                    color_timestamp_ms=packet.color_timestamp_ms,
-                    depth_timestamp_ms=packet.depth_timestamp_ms,
-                )
+                result = detector.process_packet(packet)
+                if seat is not None:
+                    result[seat_key] = seat.observe(packet.frame, result["detections"], packet.timestamp)
+                    if publisher is not None:
+                        publisher.update(result[seat_key], captured)
                 if stereo:
                     result["common_frame"] = f"{stereo.serials[0]}_color_optical_frame"
-                    result["capture_monotonic_s"] = packet.received_monotonic
                     for obj in result["detections"]:
                         local = obj["position_3d_m"]
                         obj["position_common_m"] = (stereo.transform_to_common_frame(packet.serial_number, local).tolist()
@@ -425,9 +485,7 @@ def run(args: argparse.Namespace) -> int:
                 result["pipeline_fps"] = round(smoothed_pipeline_fps, 2)
                 processed_frames += 1
 
-                if output_file is not None:
-                    output_file.write(json.dumps(result, ensure_ascii=False) + "\n")
-                    output_file.flush()
+                print(json.dumps(result, ensure_ascii=False), file=output_file, flush=True)
 
                 if not args.no_display:
                     preview = detector.draw_detections(
@@ -435,6 +493,8 @@ def run(args: argparse.Namespace) -> int:
                     )
                     if seat_rois is not None:
                         preview = seat_rois.draw(preview)
+                    if seat is not None:
+                        preview = draw_seats(preview, result[seat_key])
                     show_camera_window(
                         "SeatSense Vision",
                         packet.camera_id,
@@ -451,6 +511,8 @@ def run(args: argparse.Namespace) -> int:
                 for drop_camera_id, drop_count in video.dropped_frames.items():
                     print(f"  {drop_camera_id}: {drop_count}")
     finally:
+        if publisher is not None:
+            publisher.close()
         if output_file is not None:
             output_file.close()
         cv2.destroyAllWindows()
@@ -473,7 +535,7 @@ def main() -> int:
 
     try:
         return run(args)
-    except (DetectorDependencyError, InputSourceError, ValueError) as exc:
+    except (DetectorDependencyError, InputSourceError, ValueError, OSError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
     except KeyboardInterrupt:

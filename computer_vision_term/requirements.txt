@@ -1,5 +1,6 @@
 numpy>=1.24
 opencv-python>=4.8
+Pillow>=9
 ultralytics>=8.3,<9
 matplotlib>=3.6
 

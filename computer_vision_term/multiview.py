@@ -1,17 +1,12 @@
 """Calibrate two fixed RGB cameras, fuse observations and feed the SeatSense app."""
 
 import argparse
-import base64
-from contextlib import closing
 from dataclasses import asdict
-import http.client
 from itertools import islice
 import json
-import os
 from pathlib import Path
 import sys
 import time
-from urllib.parse import urlsplit
 
 import cv2
 import numpy as np
@@ -20,7 +15,9 @@ from camera import InputSourceError, MultiRealSenseSource, RealSenseSource
 from desk import REFERENCE_SAMPLES, sampled_frames
 from detector import DetectorDependencyError, VisionDetector
 from main import load_config, show_camera_window
-from seat_fusion import MAX_SAMPLE_GAP, PATCH_CORNERS, SeatFusion, SeatView, observe_view
+from run_log import open_run_log
+from seat_app import SeatApp
+from seat_fusion import PATCH_CORNERS, SeatFusion, SeatView, observe_view
 from stereo_geometry import load_calibration
 
 
@@ -131,56 +128,6 @@ def read_views(path):
     return views
 
 
-class SeatApp:
-    def __init__(self, url):
-        address = urlsplit(url)
-        if (not address.hostname or address.username or address.password or address.query
-                or address.fragment or address.path not in ("", "/")):
-            raise ValueError("--app-url must be the SeatSense server's base URL.")
-        if address.scheme == "https":
-            self.connection = http.client.HTTPSConnection
-        elif address.scheme == "http" and address.hostname in ("localhost", "127.0.0.1", "::1"):
-            self.connection = http.client.HTTPConnection
-        else:
-            raise ValueError("Use HTTPS for a remote SeatSense server or HTTP on localhost.")
-        self.host, self.port = address.hostname, address.port
-        password = os.getenv("SEAT_ADMIN_PASSWORD")
-        if not password:
-            raise ValueError("Set SEAT_ADMIN_PASSWORD to the app's configured admin password.")
-        token = base64.b64encode(f"admin:{password}".encode()).decode()
-        self.headers = {"Content-Type": "application/json", "Authorization": "Basic " + token}
-        self.delivered = {}
-        self.retry_at = 0.0
-
-    def send(self, seat, state, captured):
-        now = time.monotonic()
-        if self.delivered.get(seat) == state or now < self.retry_at or now-captured > MAX_SAMPLE_GAP:
-            return
-        payload = dict(action="detect", source="camera", seat_id=seat,
-                       occupied=state[0], belongings=state[1])
-        try:
-            with closing(self.connection(self.host, self.port, timeout=2)) as client:
-                client.request("POST", "/api/action", json.dumps(payload), self.headers)
-                response = client.getresponse()
-                status = response.status
-                response.read()
-            if status == 403:
-                raise ValueError("SeatSense rejected admin authentication. Check SEAT_ADMIN_PASSWORD.")
-            if status == 409:
-                raise ValueError("In SeatSense /demo select 카메라 API 모드, then start again.")
-            if 400 <= status < 500:
-                raise ValueError(f"SeatSense rejected seat {seat} with HTTP {status}.")
-            if status != 200:
-                raise OSError(f"SeatSense HTTP {status}")
-        except (OSError, http.client.HTTPException) as exc:
-            self.delivered.pop(seat, None)
-            self.retry_at = time.monotonic() + 2
-            print(f"Camera update pending ({exc}); retrying fresh observations.", file=sys.stderr)
-            return
-        self.delivered[seat] = state
-        print(f"SeatSense updated seat {seat}", flush=True)
-
-
 def report(results, last, app, captured):
     for seat, (status, state) in sorted(results.items()):
         if last.get(seat) != (status, state):
@@ -191,13 +138,15 @@ def report(results, last, app, captured):
             app.send(seat, state, captured)
 
 
-def record_observation(log, serial, stamp, observations, results):
+def record_observation(log, serial, stamp, observations, results, *, detector_frame=None):
     if log is not None:
         row = {"serial": serial, "capture_monotonic_s": stamp,
                "observations": {seat: asdict(obs) for seat, obs in observations.items()},
                "fusion": {seat: {"status": status, "occupied": state[0] if state else None,
                                  "belongings": state[1] if state else None}
                           for seat, (status, state) in results.items()}}
+        if detector_frame is not None:
+            row["detector_frame"] = detector_frame
         print(json.dumps(row), file=log, flush=True)
 
 
@@ -214,11 +163,11 @@ def live(args, app, log):
                               fps=config["realsense_fps"], include_depth=False) as cameras:
         for packet in cameras.frames():
             serial, captured = packet.serial_number, packet.received_monotonic
-            detected = detector.process_frame(packet.frame, packet.camera_id, packet.timestamp)
+            detected = detector.process_packet(packet)
             seats = views[serial]
             observations = observe_view(packet.frame, seats, detected["detections"])
             results = fusion.update(serial, captured, observations, time.monotonic())
-            record_observation(log, serial, captured, observations, results)
+            record_observation(log, serial, captured, observations, results, detector_frame=detected)
             report(results, last, app, captured)
             if not args.no_display:
                 preview = detector.draw_detections(packet.frame, detected)
@@ -297,7 +246,7 @@ def main():
     simulation.add_argument("--seat", type=seat_number, default=1)
     for command in (capture, simulation):
         command.add_argument("--app-url", help="SeatSense base URL; omit to print observations locally")
-        command.add_argument("--jsonl", type=Path, help="Write per-camera evidence and paired decisions to a new file")
+        command.add_argument("--jsonl", type=Path, help="Set the observation log path (default: a new file under output/logs/)")
     args = parser.parse_args()
     log = None
     try:
@@ -305,9 +254,7 @@ def main():
             calibrate(args)
         else:
             app = SeatApp(args.app_url) if args.app_url else None
-            if args.jsonl:
-                args.jsonl.parent.mkdir(parents=True, exist_ok=True)
-                log = args.jsonl.open("x", encoding="utf-8")
+            log = open_run_log(f"multiview_{args.mode}", args.jsonl)
             if args.mode == "demo":
                 demo(args, app, log)
             else:

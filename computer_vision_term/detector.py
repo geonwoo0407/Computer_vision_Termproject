@@ -9,7 +9,7 @@ from typing import Any, Iterable
 import cv2
 import numpy as np
 
-from camera import CameraIntrinsics
+from camera import CameraIntrinsics, FramePacket
 from depth import estimate_object_depth
 
 CLASS_COLORS_BGR = {"person": (60, 210, 90), "chair": (245, 170, 70)}
@@ -63,6 +63,23 @@ class VisionDetector:
         if unsupported:
             unsupported_text = ", ".join(sorted(unsupported))
             raise ValueError(f"Model does not support configured classes: {unsupported_text}")
+        self.settings = {
+            "model": str(model_path), "confidence_threshold": confidence,
+            "image_size": image_size, "device": str(device),
+            "classes": "all" if len(self.class_ids) == len(self.class_names) else sorted(requested),
+        }
+
+    def process_packet(self, packet: FramePacket) -> dict[str, Any]:
+        """Carry the camera's frame identity and clocks through inference."""
+        result = self.process_frame(
+            packet.frame, packet.camera_id, packet.timestamp, packet.depth_m, packet.intrinsics,
+            native_intrinsics=packet.native_intrinsics, serial_number=packet.serial_number,
+            frame_id=packet.frame_index, color_timestamp_ms=packet.color_timestamp_ms,
+            depth_timestamp_ms=packet.depth_timestamp_ms,
+        )
+        result["capture_monotonic_s"] = packet.received_monotonic
+        result["timestamp_domain"] = packet.timestamp_domain
+        return result
 
     def process_frame(
         self,
@@ -133,6 +150,7 @@ class VisionDetector:
         height, width = frame.shape[:2]
         return {
             "schema_version": "1.0",
+            "detector_settings": self.settings.copy(),
             "camera_id": camera_id,
             "serial_number": serial_number,
             "frame_id": frame_id,

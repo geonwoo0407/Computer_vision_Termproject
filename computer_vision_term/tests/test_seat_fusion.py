@@ -1,9 +1,15 @@
+import io
+import json
 import unittest
+from unittest.mock import Mock, patch
 
 import cv2
 import numpy as np
 
 from seat_fusion import Observation, SeatFusion, SeatView, combine, observe_view
+from camera import FramePacket
+from detector import VisionDetector
+from multiview import record_observation
 
 
 def seen(table="no_change", changes=(), person=False, known=False):
@@ -11,6 +17,30 @@ def seen(table="no_change", changes=(), person=False, known=False):
 
 
 class TwoViewTests(unittest.TestCase):
+    def test_live_log_preserves_frame_identity_even_without_detections(self):
+        sdk = Mock()
+        sdk.YOLO.return_value.names = {0: "person"}
+        sdk.YOLO.return_value.predict.return_value = [Mock(boxes=None)]
+        with patch.dict("sys.modules", ultralytics=sdk):
+            detector = VisionDetector()
+        packet = FramePacket(np.zeros((12, 16, 3), np.uint8), 12., "rear", 81,
+                             serial_number="rear-device", color_timestamp_ms=12000.,
+                             timestamp_domain="hardware_clock", received_monotonic=207.4)
+        detected = detector.process_packet(packet)
+        log = io.StringIO()
+        record_observation(log, packet.serial_number, packet.received_monotonic, {}, {},
+                           detector_frame=detected)
+        row = json.loads(log.getvalue())
+        frame = row["detector_frame"]
+        self.assertEqual(frame["camera_id"], "rear")
+        self.assertEqual(frame["serial_number"], row["serial"])
+        self.assertEqual(frame["frame_id"], 81)
+        self.assertEqual(frame["color_timestamp_ms"], 12000.)
+        self.assertEqual(frame["timestamp_domain"], "hardware_clock")
+        self.assertEqual(frame["capture_monotonic_s"], row["capture_monotonic_s"])
+        self.assertEqual(frame["detections"], [])
+        self.assertFalse(frame["depth_available"])
+
     def test_opposite_view_can_confirm_person_or_recognized_item(self):
         self.assertEqual(combine(seen(), seen(person=True)), (True, False))
         self.assertEqual(combine(seen(known=True), seen("occluded")), (False, True))

@@ -40,13 +40,30 @@ class DeskChangeDetector:
         _, _, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
         return [row[:4].tolist() for row in stats[1:] if row[4] >= self.min_area]
 
-    def observe(self, color):
+    def observe(self, color, *, local_contrast=False, ignore=None):
         if color.shape != self.color.shape or color.dtype != np.uint8:
             raise ValueError("Expected an 8-bit BGR frame matching the reference.")
         bgr = cv2.GaussianBlur(color, (3, 3), 0)
         rgb_change = cv2.absdiff(self.color, bgr).max(axis=2) >= 25
         color_change = np.abs(self.chromaticity(bgr) - self.chroma).max(axis=2) > 0.07
         evidence = rgb_change & color_change
+        if local_contrast:
+            # Recover neutral objects such as a black pouch on a gray desk.
+            # Subtract the ROI-wide exposure shift before testing local contrast.
+            gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
+            delta = gray.astype(np.int16) - cv2.cvtColor(self.color, cv2.COLOR_BGR2GRAY)
+            visible = delta if ignore is None else delta[~ignore]
+            if visible.size:
+                changed = rgb_change if ignore is None else rgb_change[~ignore]
+                # A mostly replaced view lacks a visible reference to distinguish
+                # a local belonging from occlusion or a shifted camera.
+                if changed.mean() > 0.70:
+                    self.streak.fill(0)
+                    return "uncertain", []
+                evidence |= rgb_change & (np.abs(delta - np.median(visible)) >= 55)
+        if ignore is not None:
+            evidence[ignore] = False
+            rgb_change[ignore] = False
         self.streak = np.where(evidence, np.minimum(self.streak + 1, 3), 0).astype(np.uint8)
         boxes = self.regions(self.streak >= 3)
         if boxes:
